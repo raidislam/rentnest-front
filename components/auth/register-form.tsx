@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,7 +10,8 @@ import { Building2, CircleAlert, House, LoaderCircle, PartyPopper } from "lucide
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FieldError, FormField, Input, fieldAria } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
-import { MockApiError, registerUser } from "@/lib/mock-api";
+import { registerRequest } from "@/lib/api/auth-client";
+import { applyFieldErrors, toApiError } from "@/lib/api/errors";
 import { cn, dashboardPath } from "@/lib/utils";
 import { PASSWORD_RULES, PasswordRequirements } from "./password-requirements";
 import { PasswordInput } from "./password-input";
@@ -48,14 +50,19 @@ const schema = z
 
 type FormValues = z.infer<typeof schema>;
 
+/** Form fields that can receive backend validation messages. */
+const FORM_FIELDS = ["name", "email", "password", "role"] as const;
+
 export function RegisterForm({ defaultRole }: { defaultRole: FormValues["role"] }) {
+  const router = useRouter();
   const toast = useToast();
-  const [serverError, setServerError] = useState<string | null>(null);
-  const [account, setAccount] = useState<{ name: string; role: FormValues["role"] } | null>(null);
+  const [serverError, setServerError] = useState<{ message: string; emailTaken: boolean } | null>(null);
+  const [account, setAccount] = useState<{ name: string; role: FormValues["role"]; loggedIn: boolean } | null>(null);
 
   const {
     register,
     handleSubmit,
+    setError,
     control,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
@@ -69,11 +76,18 @@ export function RegisterForm({ defaultRole }: { defaultRole: FormValues["role"] 
   const onSubmit = async ({ name, email, password, role }: FormValues) => {
     setServerError(null);
     try {
-      await registerUser({ name, email, password, role });
-      setAccount({ name, role });
+      // Creates the account, then logs in automatically (HttpOnly session cookie).
+      const { user } = await registerRequest({ name, email, password, role });
+      setAccount({ name, role, loggedIn: user !== null });
       toast({ title: "Account created", description: "Welcome to RentNest!" });
+      // Re-render server components (e.g. the navbar) with the new session.
+      if (user) router.refresh();
     } catch (err) {
-      setServerError(err instanceof MockApiError ? err.message : "Something went wrong. Please try again.");
+      const error = toApiError(err);
+      if (!applyFieldErrors(error, setError, {}, FORM_FIELDS)) {
+        // 409 = an account with this email already exists.
+        setServerError({ message: error.message, emailTaken: error.status === 409 });
+      }
     }
   };
 
@@ -88,12 +102,22 @@ export function RegisterForm({ defaultRole }: { defaultRole: FormValues["role"] 
         <h2 className="mt-5 text-2xl font-semibold tracking-tight">Welcome to RentNest, {firstName}!</h2>
         <p className="mt-2 text-stone-600">
           Your {isLandlord ? "landlord" : "tenant"} account is ready.{" "}
-          {isLandlord ? "Start by listing your first property." : "Start exploring homes that fit your budget."}
+          {!account.loggedIn
+            ? "Log in to continue."
+            : isLandlord
+              ? "Start by listing your first property."
+              : "Start exploring homes that fit your budget."}
         </p>
         <div className="mt-8 flex flex-col gap-3">
-          <Link href={dashboardPath(account.role)} className={buttonVariants({ size: "lg" })}>
-            Go to my dashboard
-          </Link>
+          {account.loggedIn ? (
+            <Link href={dashboardPath(account.role)} className={buttonVariants({ size: "lg" })}>
+              Go to my dashboard
+            </Link>
+          ) : (
+            <Link href="/auth/login" className={buttonVariants({ size: "lg" })}>
+              Log in
+            </Link>
+          )}
           <Link
             href={isLandlord ? "/dashboard/landlord/properties/new" : "/properties"}
             className={buttonVariants({ variant: "outline", size: "lg" })}
@@ -111,8 +135,8 @@ export function RegisterForm({ defaultRole }: { defaultRole: FormValues["role"] 
         <div role="alert" className="flex gap-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
           <CircleAlert aria-hidden className="size-5 shrink-0" />
           <p>
-            {serverError}{" "}
-            {serverError.includes("already exists") && (
+            {serverError.message}{" "}
+            {serverError.emailTaken && (
               <Link href="/auth/login" className="font-medium underline underline-offset-2">
                 Log in
               </Link>

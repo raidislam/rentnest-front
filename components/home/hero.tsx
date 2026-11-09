@@ -1,8 +1,9 @@
 import Image from "next/image";
 import Link from "next/link";
 import { BadgeCheck, CreditCard, MapPin, MessageSquare } from "lucide-react";
+import type { TypeOption } from "@/lib/property-insights";
 import type { Property } from "@/lib/types";
-import { formatPrice } from "@/lib/utils";
+import { formatLocation, formatPrice } from "@/lib/utils";
 import { HeroSearch } from "./hero-search";
 
 const highlights = [
@@ -14,9 +15,10 @@ const highlights = [
 interface HeroProps {
   spotlight?: Property;
   locations: string[];
+  typeOptions: TypeOption[];
 }
 
-export function Hero({ spotlight, locations }: HeroProps) {
+export function Hero({ spotlight, locations, typeOptions }: HeroProps) {
   return (
     <section className="relative overflow-hidden border-b border-stone-200 bg-white">
       <div className="page-container grid items-center gap-10 py-12 sm:py-16 lg:grid-cols-[1.1fr_1fr] lg:gap-14 lg:py-20">
@@ -34,7 +36,7 @@ export function Hero({ spotlight, locations }: HeroProps) {
           </p>
 
           <div className="mt-8">
-            <HeroSearch locations={locations} />
+            <HeroSearch locations={locations} typeOptions={typeOptions} />
           </div>
 
           <ul className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-sm text-stone-600">
@@ -63,12 +65,12 @@ export function Hero({ spotlight, locations }: HeroProps) {
               href={`/properties/${spotlight.id}`}
               className="absolute right-6 bottom-6 left-6 rounded-xl bg-white/95 p-4 shadow-lg ring-1 ring-black/5 backdrop-blur transition hover:bg-white"
             >
-              <p className="text-xs font-medium tracking-wide text-brand-700 uppercase">Featured listing</p>
+              <p className="text-xs font-medium tracking-wide text-brand-700 uppercase">Latest listing</p>
               <p className="mt-1 line-clamp-1 font-medium text-stone-900">{spotlight.title}</p>
               <div className="mt-1 flex items-center justify-between gap-3 text-sm">
                 <span className="flex items-center gap-1 text-stone-600">
                   <MapPin aria-hidden className="size-4 text-stone-400" />
-                  {spotlight.location.area}, {spotlight.location.city}
+                  {formatLocation({ ...spotlight.location, address: "" })}
                 </span>
                 <span className="font-semibold text-stone-900">
                   {formatPrice(spotlight.price)}

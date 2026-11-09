@@ -11,10 +11,13 @@ import { RequestTable } from "@/components/tenant/request-table";
 import { buttonVariants } from "@/components/ui/button";
 import { getCurrentUser, getTenantPayments, getTenantRequests } from "@/lib/mock-data";
 import { formatDate, formatPrice } from "@/lib/utils";
+import { requireUser } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "Tenant dashboard" };
 
-export default function TenantDashboardPage() {
+export default async function TenantDashboardPage() {
+  const session = await requireUser("TENANT");
+  // Page data is still mock data (wired to the API in a later step); the greeting uses the signed-in user.
   const tenant = getCurrentUser("TENANT");
   // Future: GET /api/rentals and GET /api/payments
   const requests = getTenantRequests(tenant.id);
@@ -28,7 +31,7 @@ export default function TenantDashboardPage() {
   return (
     <div className="space-y-10">
       <PageHeader
-        title={`Welcome back, ${tenant.name.split(" ")[0]}`}
+        title={`Welcome back, ${session.name.split(" ")[0]}`}
         description="Track your rental requests, payments and current home."
         actions={
           <>

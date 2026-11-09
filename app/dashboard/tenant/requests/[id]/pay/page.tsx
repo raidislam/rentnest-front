@@ -11,6 +11,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { getCurrentUser, getTenantRequestById } from "@/lib/mock-data";
 import type { RequestStatus } from "@/lib/types";
 import { formatDate, formatPrice } from "@/lib/utils";
+import { requireUser } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "Complete payment" };
 
@@ -34,6 +35,7 @@ const notPayable: Partial<Record<RequestStatus, { title: string; description: st
 };
 
 export default async function TenantPaymentPage({ params }: PageProps<"/dashboard/tenant/requests/[id]/pay">) {
+  const session = await requireUser("TENANT");
   const { id } = await params;
   const tenant = getCurrentUser("TENANT");
   const request = getTenantRequestById(tenant.id, id);
@@ -74,7 +76,7 @@ export default async function TenantPaymentPage({ params }: PageProps<"/dashboar
   const amountDue = request.monthlyRent;
 
   const summary = [
-    { term: "Tenant", detail: tenant.name },
+    { term: "Tenant", detail: session.name },
     { term: "Landlord", detail: landlord.name },
     { term: "Move-in date", detail: formatDate(request.moveInDate) },
     { term: "Lease length", detail: `${request.durationMonths} months` },

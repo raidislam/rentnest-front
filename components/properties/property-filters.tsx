@@ -3,20 +3,22 @@
 import { useId, useState } from "react";
 import { MapPin } from "lucide-react";
 import { Input, Label } from "@/components/ui/field";
-import { AMENITIES, PRICE_RANGES, PROPERTY_TYPES } from "@/lib/constants";
+import { AMENITIES, PRICE_RANGES } from "@/lib/constants";
 import type { PropertyFilters as Filters } from "@/lib/property-filters";
-import type { Amenity } from "@/lib/types";
+import type { TypeOption } from "@/lib/property-insights";
 import { cn } from "@/lib/utils";
 
 interface PropertyFiltersProps {
   value: Filters;
   onChange: (patch: Partial<Filters>) => void;
   locations: string[];
+  /** Property types from GET /api/categories. */
+  typeOptions: TypeOption[];
   /** Prefix for element ids so the panel can render twice (sidebar + mobile sheet). */
   idPrefix: string;
 }
 
-export function PropertyFilters({ value, onChange, locations, idPrefix }: PropertyFiltersProps) {
+export function PropertyFilters({ value, onChange, locations, typeOptions, idPrefix }: PropertyFiltersProps) {
   const [showAllAmenities, setShowAllAmenities] = useState(false);
   const visibleAmenities = showAllAmenities ? AMENITIES : AMENITIES.slice(0, 6);
   const activePreset = PRICE_RANGES.find((r) => {
@@ -24,7 +26,7 @@ export function PropertyFilters({ value, onChange, locations, idPrefix }: Proper
     return (value.minPrice ?? 0) === Number(min) && (value.maxPrice === null ? max === "" : value.maxPrice === Number(max));
   })?.value;
 
-  const toggleAmenity = (amenity: Amenity) =>
+  const toggleAmenity = (amenity: string) =>
     onChange({
       amenities: value.amenities.includes(amenity)
         ? value.amenities.filter((a) => a !== amenity)
@@ -61,9 +63,9 @@ export function PropertyFilters({ value, onChange, locations, idPrefix }: Proper
       <ChipGroup
         legend="Property type"
         name={`${idPrefix}-type`}
-        options={[{ value: "", label: "Any" }, ...PROPERTY_TYPES]}
+        options={[{ value: "", label: "Any" }, ...typeOptions]}
         value={value.type}
-        onChange={(type) => onChange({ type: type as Filters["type"] })}
+        onChange={(type) => onChange({ type })}
       />
 
       {/* Price */}
@@ -130,22 +132,6 @@ export function PropertyFilters({ value, onChange, locations, idPrefix }: Proper
           })}
         </div>
       </fieldset>
-
-      {/* Bedrooms / bathrooms */}
-      <ChipGroup
-        legend="Bedrooms"
-        name={`${idPrefix}-bedrooms`}
-        options={[{ value: "", label: "Any" }, ...[1, 2, 3, 4].map((n) => ({ value: String(n), label: `${n}+` }))]}
-        value={value.bedrooms === null ? "" : String(value.bedrooms)}
-        onChange={(v) => onChange({ bedrooms: v === "" ? null : Number(v) })}
-      />
-      <ChipGroup
-        legend="Bathrooms"
-        name={`${idPrefix}-bathrooms`}
-        options={[{ value: "", label: "Any" }, ...[1, 2, 3].map((n) => ({ value: String(n), label: `${n}+` }))]}
-        value={value.bathrooms === null ? "" : String(value.bathrooms)}
-        onChange={(v) => onChange({ bathrooms: v === "" ? null : Number(v) })}
-      />
 
       {/* Amenities */}
       <fieldset>

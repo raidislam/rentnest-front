@@ -24,7 +24,7 @@ export type PropertyStatus = "PENDING" | "APPROVED" | "REJECTED";
 
 export type Amenity =
   | "Air conditioning"
-  | "Wi-Fi"
+  | "WiFi"
   | "Parking"
   | "Lift"
   | "Generator backup"
@@ -49,17 +49,26 @@ export interface Property {
   location: PropertyLocation;
   /** Monthly rent in BDT. */
   price: number;
-  type: PropertyType;
-  bedrooms: number;
-  bathrooms: number;
-  areaSqft: number;
-  amenities: Amenity[];
+  /**
+   * Upper-case property type, e.g. "APARTMENT". The backend stores free text,
+   * so this is not limited to PropertyType; use propertyTypeLabel() to display it.
+   */
+  type: string;
+  // Not supported by the backend yet: undefined for API data, rendered only when present.
+  bedrooms?: number;
+  bathrooms?: number;
+  areaSqft?: number;
+  /** Amenity names as stored by the backend (free text, e.g. "WiFi"). */
+  amenities: string[];
+  /** Placeholder photos until the backend supports image upload (see lib/placeholders.ts). */
   images: string[];
   isAvailable: boolean;
-  status: PropertyStatus;
+  /** Admin moderation status. Not supported by the backend yet. */
+  status?: PropertyStatus;
   /** Optional admin note, e.g. why a listing was not approved. */
   moderationNote?: string;
-  featured: boolean;
+  /** Not supported by the backend yet. */
+  featured?: boolean;
   landlordId: string;
   createdAt: string;
 }

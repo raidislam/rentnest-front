@@ -1,7 +1,7 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { PROPERTY_TYPES } from "./constants";
-import type { PropertyType } from "./types";
+import type { PropertyLocation } from "./types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -25,8 +25,21 @@ export function formatDate(iso: string) {
   return dateFormat.format(new Date(iso));
 }
 
-export function propertyTypeLabel(type: PropertyType) {
-  return PROPERTY_TYPES.find((t) => t.value === type)?.label ?? type;
+/** "APARTMENT" -> "Apartment". Known types use their label; other backend values are title-cased. */
+export function propertyTypeLabel(type: string) {
+  const known = PROPERTY_TYPES.find((t) => t.value === type.toUpperCase())?.label;
+  if (known) return known;
+  return type
+    .toLowerCase()
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((word) => word[0].toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+/** Joins the non-empty location parts, e.g. "Dhanmondi, Dhaka" when there is no street address. */
+export function formatLocation({ address, area, city }: PropertyLocation) {
+  return [address, area, city].filter((part) => part.trim() !== "").join(", ");
 }
 
 export function initials(name: string) {

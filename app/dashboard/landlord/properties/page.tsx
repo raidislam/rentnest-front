@@ -5,10 +5,12 @@ import { PropertyManager } from "@/components/landlord/property-manager";
 import { PageHeader } from "@/components/shared/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { getCurrentUser } from "@/lib/mock-data";
+import { requireUser } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "My properties" };
 
-export default function LandlordPropertiesPage() {
+export default async function LandlordPropertiesPage() {
+  await requireUser("LANDLORD");
   return (
     <div className="space-y-8">
       <PageHeader

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { Search, SearchX, SlidersHorizontal, X } from "lucide-react";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
@@ -12,11 +13,13 @@ import {
   countActiveFilters,
   filterProperties,
   filtersToQuery,
+  serverFilterKey,
   type PropertyFilters as Filters,
   type SortOption,
 } from "@/lib/property-filters";
+import type { TypeOption } from "@/lib/property-insights";
 import type { Property } from "@/lib/types";
-import { formatPrice, propertyTypeLabel } from "@/lib/utils";
+import { cn, formatPrice, propertyTypeLabel } from "@/lib/utils";
 import { PropertyFilters } from "./property-filters";
 import { PropertyGrid } from "./property-grid";
 
@@ -24,26 +27,58 @@ interface PropertyExplorerProps {
   properties: Property[];
   ratings: Record<string, { average: number; count: number }>;
   locations: string[];
+  /** Property types from GET /api/categories. */
+  typeOptions: TypeOption[];
+  /** Filters from the URL; `properties` were fetched from the API with these. */
   initialFilters: Filters;
 }
 
-export function PropertyExplorer({ properties, ratings, locations, initialFilters }: PropertyExplorerProps) {
+/** Wait this long after the last change before asking the server for new results. */
+const SERVER_REFRESH_DELAY_MS = 400;
+
+export function PropertyExplorer({ properties, ratings, locations, typeOptions, initialFilters }: PropertyExplorerProps) {
+  const router = useRouter();
+  const pathname = usePathname();
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [isRefreshing, startRefresh] = useTransition();
 
+  // Navigations that land here with new URL params (e.g. a footer link) reset the filters.
+  // Results of our own refreshes (pushedQuery) don't, so typing isn't interrupted.
+  const initialQuery = filtersToQuery(initialFilters);
+  const [syncedQuery, setSyncedQuery] = useState(initialQuery);
+  const [pushedQuery, setPushedQuery] = useState<string | null>(null);
+  if (initialQuery !== syncedQuery) {
+    setSyncedQuery(initialQuery);
+    if (initialQuery !== pushedQuery && initialQuery !== filtersToQuery(filters)) setFilters(initialFilters);
+  }
+
+  // Filtering in the browser gives instant feedback over the results already loaded.
   const results = useMemo(() => filterProperties(properties, filters), [properties, filters]);
   const activeCount = countActiveFilters(filters);
 
-  // Keep the URL shareable without triggering a server round-trip.
+  // Keep the URL shareable. When a backend-supported filter changes (location, type,
+  // price, amenity), re-run the page on the server so GET /api/properties applies it.
+  const serverKey = serverFilterKey(filters);
+  const loadedServerKey = serverFilterKey(initialFilters);
   useEffect(() => {
     const query = filtersToQuery(filters);
-    window.history.replaceState(null, "", query ? `?${query}` : window.location.pathname);
-  }, [filters]);
+    const url = query ? `${pathname}?${query}` : pathname;
+    if (serverKey === loadedServerKey) {
+      window.history.replaceState(null, "", url);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setPushedQuery(query);
+      startRefresh(() => router.replace(url, { scroll: false }));
+    }, SERVER_REFRESH_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [filters, serverKey, loadedServerKey, pathname, router]);
 
   const update = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch }));
   const clearAll = () => setFilters({ ...DEFAULT_FILTERS, q: filters.q, sort: filters.sort });
 
-  const chips = activeChips(filters, update);
+  const chips = activeChips(filters, update, typeOptions);
   const resultLabel = `${results.length} ${results.length === 1 ? "property" : "properties"}`;
 
   return (
@@ -59,7 +94,7 @@ export function PropertyExplorer({ properties, ratings, locations, initialFilter
               </button>
             )}
           </div>
-          <PropertyFilters value={filters} onChange={update} locations={locations} idPrefix="sidebar" />
+          <PropertyFilters value={filters} onChange={update} locations={locations} typeOptions={typeOptions} idPrefix="sidebar" />
         </div>
       </aside>
 
@@ -137,7 +172,7 @@ export function PropertyExplorer({ properties, ratings, locations, initialFilter
           )}
         </div>
 
-        <div className="mt-6">
+        <div aria-busy={isRefreshing} className={cn("mt-6 transition-opacity", isRefreshing && "opacity-60")}>
           <h2 className="sr-only">Search results</h2>
           {results.length > 0 ? (
             <PropertyGrid properties={results} ratings={ratings} preloadCount={2} />
@@ -173,16 +208,16 @@ export function PropertyExplorer({ properties, ratings, locations, initialFilter
           </div>
         }
       >
-        <PropertyFilters value={filters} onChange={update} locations={locations} idPrefix="sheet" />
+        <PropertyFilters value={filters} onChange={update} locations={locations} typeOptions={typeOptions} idPrefix="sheet" />
       </Dialog>
     </div>
   );
 }
 
-function activeChips(f: Filters, update: (patch: Partial<Filters>) => void) {
+function activeChips(f: Filters, update: (patch: Partial<Filters>) => void, typeOptions: TypeOption[]) {
   const chips: { key: string; label: string; remove: () => void }[] = [];
   if (f.location) chips.push({ key: "location", label: f.location, remove: () => update({ location: "" }) });
-  if (f.type) chips.push({ key: "type", label: propertyTypeLabel(f.type), remove: () => update({ type: "" }) });
+  if (f.type) chips.push({ key: "type", label: typeOptions.find((t) => t.value === f.type)?.label ?? propertyTypeLabel(f.type), remove: () => update({ type: "" }) });
   if (f.minPrice !== null || f.maxPrice !== null) {
     const label =
       f.minPrice !== null && f.maxPrice !== null
@@ -192,8 +227,6 @@ function activeChips(f: Filters, update: (patch: Partial<Filters>) => void) {
           : `Up to ${formatPrice(f.maxPrice!)}`;
     chips.push({ key: "price", label, remove: () => update({ minPrice: null, maxPrice: null }) });
   }
-  if (f.bedrooms !== null) chips.push({ key: "beds", label: `${f.bedrooms}+ beds`, remove: () => update({ bedrooms: null }) });
-  if (f.bathrooms !== null) chips.push({ key: "baths", label: `${f.bathrooms}+ baths`, remove: () => update({ bathrooms: null }) });
   for (const a of f.amenities) {
     chips.push({ key: `amenity-${a}`, label: a, remove: () => update({ amenities: f.amenities.filter((x) => x !== a) }) });
   }

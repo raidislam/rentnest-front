@@ -79,10 +79,12 @@ export function LandlordPropertyCard({
             <Bath aria-hidden className="size-4 text-stone-400" />
             {bathrooms} ba
           </li>
-          <li className="flex items-center gap-1.5">
-            <Maximize2 aria-hidden className="size-4 text-stone-400" />
-            {areaSqft.toLocaleString("en-IN")} sqft
-          </li>
+          {areaSqft !== undefined && (
+            <li className="flex items-center gap-1.5">
+              <Maximize2 aria-hidden className="size-4 text-stone-400" />
+              {areaSqft.toLocaleString("en-IN")} sqft
+            </li>
+          )}
         </ul>
 
         <Link

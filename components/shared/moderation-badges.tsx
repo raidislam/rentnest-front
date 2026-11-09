@@ -8,8 +8,12 @@ const propertyStatus: Record<PropertyStatus, { label: string; tone: "amber" | "b
   REJECTED: { label: "Rejected", tone: "red", icon: CircleX },
 };
 
-/** Listing moderation status (icon + text, so it doesn't rely on colour). */
-export function PropertyStatusBadge({ status }: { status: PropertyStatus }) {
+/**
+ * Listing moderation status (icon + text, so it doesn't rely on colour).
+ * Renders nothing when there is no status: the backend has no moderation yet.
+ */
+export function PropertyStatusBadge({ status }: { status?: PropertyStatus }) {
+  if (!status) return null;
   const { label, tone, icon: Icon } = propertyStatus[status];
   return (
     <Badge tone={tone}>

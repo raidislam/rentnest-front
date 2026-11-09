@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { LogOut, Menu } from "lucide-react";
+import { Menu } from "lucide-react";
+import { LogoutButton } from "@/components/auth/logout-button";
 import { Avatar } from "@/components/shared/avatar";
 import { Logo } from "@/components/shared/logo";
 import { buttonVariants } from "@/components/ui/button";
@@ -22,7 +23,8 @@ export interface DashboardNavItem {
 interface DashboardShellProps {
   roleLabel: string;
   nav: DashboardNavItem[];
-  user: { name: string; email: string; avatarUrl?: string };
+  /** The signed-in user from the session (the backend provides no avatar, so initials are shown). */
+  user: { name: string; email?: string; avatarUrl?: string };
   children: ReactNode;
 }
 
@@ -71,17 +73,10 @@ export function DashboardShell({ roleLabel, nav, user, children }: DashboardShel
         <Avatar name={user.name} src={user.avatarUrl} />
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-stone-900">{user.name}</p>
-          <p className="truncate text-xs text-stone-500">{user.email}</p>
+          {user.email && <p className="truncate text-xs text-stone-500">{user.email}</p>}
         </div>
       </div>
-      {/* Mock logout: there is no session yet, so this simply returns to the login page. */}
-      <Link
-        href="/auth/login"
-        className={buttonVariants({ variant: "ghost", size: "sm", className: "mt-3 w-full justify-start text-stone-600" })}
-      >
-        <LogOut />
-        Log out
-      </Link>
+      <LogoutButton size="sm" redirectTo="/auth/login" className="mt-3 w-full justify-start text-stone-600" />
     </div>
   );
 

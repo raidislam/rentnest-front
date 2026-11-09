@@ -7,10 +7,12 @@ import { buttonVariants } from "@/components/ui/button";
 import { REQUEST_STATUSES } from "@/lib/constants";
 import { getCurrentUser, getTenantRequests } from "@/lib/mock-data";
 import type { RequestStatus } from "@/lib/types";
+import { requireUser } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "My rental requests" };
 
 export default async function TenantRequestsPage({ searchParams }: PageProps<"/dashboard/tenant/requests">) {
+  await requireUser("TENANT");
   const { status } = await searchParams;
   const initialFilter = REQUEST_STATUSES.includes(status as RequestStatus) ? (status as RequestStatus) : "ALL";
   // Future: GET /api/rentals

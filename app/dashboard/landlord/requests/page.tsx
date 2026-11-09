@@ -4,10 +4,12 @@ import { PageHeader } from "@/components/shared/page-header";
 import { REQUEST_STATUSES } from "@/lib/constants";
 import { getCurrentUser } from "@/lib/mock-data";
 import type { RequestStatus } from "@/lib/types";
+import { requireUser } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "Rental requests" };
 
 export default async function LandlordRequestsPage({ searchParams }: PageProps<"/dashboard/landlord/requests">) {
+  await requireUser("LANDLORD");
   const { status } = await searchParams;
   const initialFilter = REQUEST_STATUSES.includes(status as RequestStatus) ? (status as RequestStatus) : "ALL";
 

@@ -3,10 +3,12 @@ import { RequestModeration } from "@/components/admin/request-moderation";
 import { PageHeader } from "@/components/shared/page-header";
 import { REQUEST_STATUSES } from "@/lib/constants";
 import type { RequestStatus } from "@/lib/types";
+import { requireUser } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "Rental requests" };
 
 export default async function AdminRequestsPage({ searchParams }: PageProps<"/dashboard/admin/requests">) {
+  await requireUser("ADMIN");
   const { status } = await searchParams;
   const initialFilter = REQUEST_STATUSES.includes(status as RequestStatus) ? (status as RequestStatus) : "ALL";
 

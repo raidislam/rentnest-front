@@ -5,7 +5,10 @@ import type { User } from "@/lib/types";
 const memberSince = (iso: string) =>
   new Date(iso).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
 
-export function LandlordCard({ landlord, listingCount }: { landlord: User; listingCount: number }) {
+/** The backend provides only the landlord's id and name, so avatar and join date are optional. */
+type LandlordSummary = Pick<User, "name"> & Partial<Pick<User, "avatarUrl" | "createdAt">>;
+
+export function LandlordCard({ landlord, listingCount }: { landlord: LandlordSummary; listingCount: number }) {
   return (
     <div className="rounded-2xl border border-stone-200 bg-white p-5 sm:p-6">
       <h2 className="text-sm font-semibold text-stone-500">Listed by</h2>
@@ -20,10 +23,12 @@ export function LandlordCard({ landlord, listingCount }: { landlord: User; listi
         </div>
       </div>
       <ul className="mt-4 space-y-2 text-sm text-stone-600">
-        <li className="flex items-center gap-2">
-          <CalendarDays aria-hidden className="size-4 text-stone-400" />
-          On RentNest since {memberSince(landlord.createdAt)}
-        </li>
+        {landlord.createdAt && (
+          <li className="flex items-center gap-2">
+            <CalendarDays aria-hidden className="size-4 text-stone-400" />
+            On RentNest since {memberSince(landlord.createdAt)}
+          </li>
+        )}
         <li className="flex items-center gap-2">
           <Building2 aria-hidden className="size-4 text-stone-400" />
           {listingCount} active {listingCount === 1 ? "listing" : "listings"}

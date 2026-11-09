@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Building2, ClipboardList, LayoutDashboard, Search } from "lucide-react";
 import { DashboardShell, type DashboardNavItem } from "@/components/dashboard/dashboard-shell";
-import { getCurrentUser } from "@/lib/mock-data";
+import { requireUser } from "@/lib/auth/session";
 
 export const metadata: Metadata = { robots: { index: false, follow: false } };
 
@@ -12,9 +12,9 @@ const nav: DashboardNavItem[] = [
   { href: "/properties", label: "Browse properties", icon: <Search /> },
 ];
 
-// No route protection yet — the mock landlord stands in for the signed-in user.
-export default function LandlordDashboardLayout({ children }: { children: React.ReactNode }) {
-  const user = getCurrentUser("LANDLORD");
+export default async function LandlordDashboardLayout({ children }: { children: React.ReactNode }) {
+  // Verified with GET /api/auth/me; redirects to login or the user's own dashboard.
+  const user = await requireUser("LANDLORD");
   return (
     <DashboardShell roleLabel="Landlord" nav={nav} user={user}>
       {children}

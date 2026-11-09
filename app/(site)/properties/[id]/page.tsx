@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, unstable_rethrow } from "next/navigation";
+import { connection } from "next/server";
+import { cache } from "react";
 import { Bath, BedDouble, ChevronRight, Hourglass, House, MapPin, Maximize2, Star } from "lucide-react";
 import { AmenityList } from "@/components/properties/amenity-list";
 import { BookingPanel } from "@/components/properties/booking-panel";
@@ -9,23 +11,29 @@ import { PropertyGallery } from "@/components/properties/property-gallery";
 import { PropertyGrid } from "@/components/properties/property-grid";
 import { ReviewList } from "@/components/properties/review-list";
 import { Badge } from "@/components/ui/badge";
-import {
-  getLandlordProperties,
-  getPropertyById,
-  getPropertyRating,
-  getPropertyReviews,
-  getSimilarProperties,
-  getUserById,
-  properties,
-} from "@/lib/mock-data";
-import { formatDate, propertyTypeLabel } from "@/lib/utils";
+import { toApiError } from "@/lib/api/errors";
+import { getPublicServerApi } from "@/lib/api/server";
+import { getProperty, listProperties } from "@/lib/api/services/properties";
+import { ratingSummary, similarProperties } from "@/lib/property-insights";
+import { formatDate, formatLocation, propertyTypeLabel } from "@/lib/utils";
 
-export function generateStaticParams() {
-  return properties.map((p) => ({ id: p.id }));
-}
+/**
+ * GET /api/properties/:id, shared by generateMetadata and the page (cache() dedupes it).
+ * Returns null for unknown ids (404) and malformed ids (400 "Invalid ID format").
+ */
+const loadProperty = cache(async (id: string) => {
+  try {
+    return await getProperty(getPublicServerApi(), id);
+  } catch (error) {
+    unstable_rethrow(error);
+    const apiError = toApiError(error);
+    if (apiError.status === 404 || apiError.status === 400) return null;
+    throw apiError;
+  }
+});
 
 export async function generateMetadata({ params }: PageProps<"/properties/[id]">): Promise<Metadata> {
-  const property = getPropertyById((await params).id);
+  const property = await loadProperty((await params).id);
   if (!property) return { title: "Property not found" };
   const description = property.description.slice(0, 155);
   return {
@@ -36,19 +44,23 @@ export async function generateMetadata({ params }: PageProps<"/properties/[id]">
 }
 
 export default async function PropertyDetailsPage({ params }: PageProps<"/properties/[id]">) {
+  // Axios bypasses Next's fetch cache, so render per request instead of caching the first render.
+  await connection();
   const { id } = await params;
-  // Future: GET /api/properties/:id
-  const property = getPropertyById(id);
+
+  // The public list feeds "similar homes" and the landlord's listing count (no dedicated endpoints).
+  const [property, available] = await Promise.all([loadProperty(id), listProperties(getPublicServerApi())]);
   if (!property) notFound();
 
-  const landlord = getUserById(property.landlordId);
-  const rating = getPropertyRating(property.id);
-  const reviews = getPropertyReviews(property.id).map((r) => ({ ...r, tenant: getUserById(r.tenantId) }));
-  const similar = getSimilarProperties(property);
-  const similarRatings = Object.fromEntries(similar.map((p) => [p.id, getPropertyRating(p.id)]));
-  const listingCount = getLandlordProperties(property.landlordId).filter((p) => p.status === "APPROVED").length;
+  // The backend embeds only the landlord's id and name, and reviews without reviewer names.
+  const landlord = property.landlord;
+  const rating = ratingSummary(property.reviews);
+  const reviews = property.reviews;
+  const similar = similarProperties(property, available);
+  const listingCount = available.filter((p) => p.landlordId === property.landlordId).length;
 
-  const isPendingReview = property.status !== "APPROVED";
+  // The backend has no moderation yet, so status is normally undefined (no banner).
+  const isPendingReview = property.status === "PENDING" || property.status === "REJECTED";
   const unavailableReason = isPendingReview
     ? "This listing is awaiting review and can't receive requests yet."
     : !property.isAvailable
@@ -61,12 +73,18 @@ export default async function PropertyDetailsPage({ params }: PageProps<"/proper
     unavailableReason,
   };
 
+  // Bedrooms, bathrooms and size are shown only when known (the backend doesn't provide them yet).
   const facts = [
     { icon: House, label: "Type", value: propertyTypeLabel(property.type) },
     { icon: BedDouble, label: "Bedrooms", value: property.bedrooms },
     { icon: Bath, label: "Bathrooms", value: property.bathrooms },
-    { icon: Maximize2, label: "Size", value: `${property.areaSqft.toLocaleString("en-IN")} sqft` },
-  ];
+    {
+      icon: Maximize2,
+      label: "Size",
+      value: property.areaSqft === undefined ? undefined : `${property.areaSqft.toLocaleString("en-IN")} sqft`,
+    },
+  ].filter((fact) => fact.value !== undefined);
+  const breadcrumbArea = property.location.area || property.location.city;
 
   return (
     <div className="page-container pt-6 sm:pt-8">
@@ -77,12 +95,14 @@ export default async function PropertyDetailsPage({ params }: PageProps<"/proper
               Properties
             </Link>
           </li>
-          <li className="flex items-center gap-1">
-            <ChevronRight aria-hidden className="size-4" />
-            <Link href={`/properties?location=${encodeURIComponent(property.location.area)}`} className="rounded py-0.5 hover:text-stone-900">
-              {property.location.area}
-            </Link>
-          </li>
+          {breadcrumbArea && (
+            <li className="flex items-center gap-1">
+              <ChevronRight aria-hidden className="size-4" />
+              <Link href={`/properties?location=${encodeURIComponent(breadcrumbArea)}`} className="rounded py-0.5 hover:text-stone-900">
+                {breadcrumbArea}
+              </Link>
+            </li>
+          )}
           <li className="flex min-w-0 items-center gap-1">
             <ChevronRight aria-hidden className="size-4 shrink-0" />
             <span aria-current="page" className="max-w-64 truncate text-stone-700">
@@ -110,7 +130,7 @@ export default async function PropertyDetailsPage({ params }: PageProps<"/proper
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-stone-600">
           <span className="flex items-center gap-1.5">
             <MapPin aria-hidden className="size-4 text-stone-400" />
-            {property.location.address}, {property.location.area}, {property.location.city}
+            {formatLocation(property.location)}
           </span>
           {rating.count > 0 && (
             <a href="#reviews" className="flex items-center gap-1 rounded hover:text-stone-900">
@@ -184,7 +204,7 @@ export default async function PropertyDetailsPage({ params }: PageProps<"/proper
           <h2 id="similar" className="text-xl font-semibold">
             Similar homes in {property.location.city}
           </h2>
-          <PropertyGrid properties={similar} ratings={similarRatings} className="mt-6 lg:grid-cols-3" />
+          <PropertyGrid properties={similar} ratings={{}} className="mt-6 lg:grid-cols-3" />
         </section>
       )}
 

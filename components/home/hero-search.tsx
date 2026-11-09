@@ -2,10 +2,11 @@ import Form from "next/form";
 import { MapPin, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/field";
-import { PRICE_RANGES, PROPERTY_TYPES } from "@/lib/constants";
+import { PRICE_RANGES } from "@/lib/constants";
+import type { TypeOption } from "@/lib/property-insights";
 
 /** Submits as GET to /properties?location=…&type=…&price=… with client-side navigation. */
-export function HeroSearch({ locations }: { locations: string[] }) {
+export function HeroSearch({ locations, typeOptions }: { locations: string[]; typeOptions: TypeOption[] }) {
   return (
     <Form
       action="/properties"
@@ -37,7 +38,7 @@ export function HeroSearch({ locations }: { locations: string[] }) {
         <Label htmlFor="hero-type">Property type</Label>
         <Select id="hero-type" name="type" defaultValue="" className="h-11">
           <option value="">Any type</option>
-          {PROPERTY_TYPES.map((t) => (
+          {typeOptions.map((t) => (
             <option key={t.value} value={t.value}>
               {t.label}
             </option>

@@ -16,8 +16,8 @@ export function FeaturedProperties({ properties, ratings }: FeaturedPropertiesPr
       <div className="page-container py-16 sm:py-20">
         <SectionHeading
           id="featured-properties"
-          eyebrow="Featured properties"
-          title="Handpicked homes available now"
+          eyebrow="Latest properties"
+          title="Recently listed homes available now"
           description="Verified listings with clear pricing and responsive landlords."
           action={
             <Link href="/properties" className={buttonVariants({ variant: "outline" })}>

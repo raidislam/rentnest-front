@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 import { PropertyExplorer } from "@/components/properties/property-explorer";
 import { PageHeader } from "@/components/shared/page-header";
-import { getLocationOptions, getPropertyRating, getPublicProperties } from "@/lib/mock-data";
-import { filtersToQuery, parseFilters } from "@/lib/property-filters";
+import { getPublicServerApi } from "@/lib/api/server";
+import { listCategories } from "@/lib/api/services/categories";
+import { listProperties } from "@/lib/api/services/properties";
+import { parseFilters, toPropertyQueryParams } from "@/lib/property-filters";
+import { categoryTypeOptions, locationOptions } from "@/lib/property-insights";
 
 export const metadata: Metadata = {
   title: "Browse rental properties",
@@ -10,10 +13,16 @@ export const metadata: Metadata = {
 };
 
 export default async function PropertiesPage({ searchParams }: PageProps<"/properties">) {
+  // Reading searchParams already makes this page render per request.
   const initialFilters = parseFilters(await searchParams);
-  // Future: GET /api/properties?{filters}
-  const properties = getPublicProperties();
-  const ratings = Object.fromEntries(properties.map((p) => [p.id, getPropertyRating(p.id)]));
+
+  const api = getPublicServerApi();
+  // GET /api/properties applies location, type, price and one amenity; the explorer
+  // applies keyword search, sorting and any extra amenities in the browser.
+  const [properties, categories] = await Promise.all([
+    listProperties(api, toPropertyQueryParams(initialFilters)),
+    listCategories(api),
+  ]);
 
   return (
     <div className="page-container py-8 sm:py-10">
@@ -22,12 +31,12 @@ export default async function PropertiesPage({ searchParams }: PageProps<"/prope
         description="Browse verified homes and narrow results by location, budget, type and amenities."
       />
       <div className="mt-8">
-        {/* Re-mount when a link navigates here with new params, e.g. from the footer. */}
         <PropertyExplorer
-          key={filtersToQuery(initialFilters)}
           properties={properties}
-          ratings={ratings}
-          locations={getLocationOptions()}
+          // The list endpoint doesn't include reviews, so cards show no rating.
+          ratings={{}}
+          locations={locationOptions(properties)}
+          typeOptions={categoryTypeOptions(categories)}
           initialFilters={initialFilters}
         />
       </div>

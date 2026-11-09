@@ -9,7 +9,7 @@ const reasons = [
   {
     icon: SlidersHorizontal,
     title: "Search that fits",
-    description: "Narrow down by area, budget, bedrooms and amenities and see results update instantly.",
+    description: "Narrow down by area, budget, property type and amenities and see results update instantly.",
   },
   {
     icon: MessageSquare,

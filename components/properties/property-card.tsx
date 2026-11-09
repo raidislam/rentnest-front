@@ -4,7 +4,7 @@ import { Bath, BedDouble, MapPin, Maximize2, Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import type { Property } from "@/lib/types";
-import { cn, formatPrice, propertyTypeLabel } from "@/lib/utils";
+import { cn, formatLocation, formatPrice, propertyTypeLabel } from "@/lib/utils";
 
 interface PropertyCardProps {
   property: Property;
@@ -65,25 +65,32 @@ export function PropertyCard({ property, rating, preload = false, className }: P
         </h3>
         <p className="mt-1 flex items-center gap-1 text-sm text-stone-600">
           <MapPin aria-hidden className="size-4 shrink-0 text-stone-400" />
-          <span className="truncate">
-            {location.area}, {location.city}
-          </span>
+          <span className="truncate">{formatLocation({ ...location, address: "" })}</span>
         </p>
 
-        <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-stone-700" aria-label="Property size">
-          <li className="flex items-center gap-1.5">
-            <BedDouble aria-hidden className="size-4 text-stone-400" />
-            {bedrooms} {bedrooms === 1 ? "bed" : "beds"}
-          </li>
-          <li className="flex items-center gap-1.5">
-            <Bath aria-hidden className="size-4 text-stone-400" />
-            {bathrooms} {bathrooms === 1 ? "bath" : "baths"}
-          </li>
-          <li className="flex items-center gap-1.5">
-            <Maximize2 aria-hidden className="size-4 text-stone-400" />
-            {areaSqft.toLocaleString("en-IN")} sqft
-          </li>
-        </ul>
+        {/* Size details are only shown when known (the backend doesn't provide them yet). */}
+        {(bedrooms !== undefined || bathrooms !== undefined || areaSqft !== undefined) && (
+          <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-stone-700" aria-label="Property size">
+            {bedrooms !== undefined && (
+              <li className="flex items-center gap-1.5">
+                <BedDouble aria-hidden className="size-4 text-stone-400" />
+                {bedrooms} {bedrooms === 1 ? "bed" : "beds"}
+              </li>
+            )}
+            {bathrooms !== undefined && (
+              <li className="flex items-center gap-1.5">
+                <Bath aria-hidden className="size-4 text-stone-400" />
+                {bathrooms} {bathrooms === 1 ? "bath" : "baths"}
+              </li>
+            )}
+            {areaSqft !== undefined && (
+              <li className="flex items-center gap-1.5">
+                <Maximize2 aria-hidden className="size-4 text-stone-400" />
+                {areaSqft.toLocaleString("en-IN")} sqft
+              </li>
+            )}
+          </ul>
+        )}
 
         <ul className="mt-3 flex flex-wrap gap-1.5" aria-label="Amenities">
           {shownAmenities.map((a) => (

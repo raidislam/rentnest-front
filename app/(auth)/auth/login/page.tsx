@@ -1,18 +1,22 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { LoginForm, type DemoAccount } from "@/components/auth/login-form";
-import { CURRENT_USER_IDS, getUserById } from "@/lib/mock-data";
+import { redirect } from "next/navigation";
+import { LoginForm } from "@/components/auth/login-form";
+import { getOptionalUser } from "@/lib/auth/session";
+import { postLoginPath } from "@/lib/auth/redirects";
 
 export const metadata: Metadata = {
   title: "Log in",
   description: "Log in to manage your rental requests, properties and payments.",
 };
 
-export default function LoginPage() {
-  const demoAccounts: DemoAccount[] = Object.values(CURRENT_USER_IDS)
-    .map((id) => getUserById(id))
-    .filter((u) => u !== undefined)
-    .map(({ role, name, email }) => ({ role, name, email }));
+export default async function LoginPage({ searchParams }: PageProps<"/auth/login">) {
+  const { next } = await searchParams;
+  const nextPath = typeof next === "string" ? next : undefined;
+
+  // Already signed in (verified with the backend, so a stale cookie can't cause a redirect loop).
+  const user = await getOptionalUser();
+  if (user) redirect(postLoginPath(nextPath, user.role));
 
   return (
     <>
@@ -24,7 +28,7 @@ export default function LoginPage() {
         </Link>
       </p>
       <div className="mt-8">
-        <LoginForm demoAccounts={demoAccounts} />
+        <LoginForm next={nextPath} />
       </div>
     </>
   );

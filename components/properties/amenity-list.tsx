@@ -11,13 +11,14 @@ import {
   Waves,
   Wifi,
   Zap,
+  CircleCheck,
   type LucideIcon,
 } from "lucide-react";
 import type { Amenity } from "@/lib/types";
 
 const icons: Record<Amenity, LucideIcon> = {
   "Air conditioning": Snowflake,
-  "Wi-Fi": Wifi,
+  WiFi: Wifi,
   Parking: Car,
   Lift: ArrowUpDown,
   "Generator backup": Zap,
@@ -30,11 +31,15 @@ const icons: Record<Amenity, LucideIcon> = {
   "Rooftop access": Building2,
 };
 
-export function AmenityList({ amenities }: { amenities: Amenity[] }) {
+/** Amenity names are free text on the backend, so unknown ones get a generic icon. */
+const iconFor = (amenity: string): LucideIcon =>
+  icons[amenity as Amenity] ?? (amenity.toLowerCase().replace(/[^a-z]/g, "") === "wifi" ? Wifi : CircleCheck);
+
+export function AmenityList({ amenities }: { amenities: string[] }) {
   return (
     <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {amenities.map((amenity) => {
-        const Icon = icons[amenity];
+        const Icon = iconFor(amenity);
         return (
           <li key={amenity} className="flex items-center gap-3 text-stone-700">
             <span className="flex size-9 items-center justify-center rounded-lg bg-stone-100 text-stone-600">

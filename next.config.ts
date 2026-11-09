@@ -1,11 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Each role has its own dashboard. Until real sessions exist, /dashboard sends
-  // visitors to log in, which routes them to the right one.
-  async redirects() {
-    return [{ source: "/dashboard", destination: "/auth/login", permanent: false }];
-  },
+  // /dashboard is handled by proxy.ts: signed-in users go to their role's
+  // dashboard, everyone else to /auth/login.
   images: {
     remotePatterns: [
       {

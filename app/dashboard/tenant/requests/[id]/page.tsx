@@ -11,6 +11,7 @@ import { RequestStatusPanel } from "@/components/tenant/request-status-panel";
 import { buttonVariants } from "@/components/ui/button";
 import { getCurrentUser, getTenantRequestById } from "@/lib/mock-data";
 import { formatDate, formatPrice, propertyTypeLabel } from "@/lib/utils";
+import { requireUser } from "@/lib/auth/session";
 
 const getOwnRequest = (id: string) => getTenantRequestById(getCurrentUser("TENANT").id, id);
 
@@ -20,6 +21,7 @@ export async function generateMetadata({ params }: PageProps<"/dashboard/tenant/
 }
 
 export default async function TenantRequestDetailsPage({ params }: PageProps<"/dashboard/tenant/requests/[id]">) {
+  await requireUser("TENANT");
   const { id } = await params;
   // Future: GET /api/rentals/:id
   const request = getOwnRequest(id);

@@ -19,7 +19,8 @@ export function StarRating({ rating, className }: { rating: number; className?: 
 }
 
 interface ReviewListProps {
-  reviews: (Review & { tenant?: User })[];
+  /** `tenant` is optional: public API reviews carry only a tenantId, so the reviewer shows as "Former tenant". */
+  reviews: (Pick<Review, "id" | "rating" | "comment" | "createdAt"> & { tenant?: Pick<User, "name" | "avatarUrl"> })[];
 }
 
 export function ReviewList({ reviews }: ReviewListProps) {
@@ -28,7 +29,7 @@ export function ReviewList({ reviews }: ReviewListProps) {
       <EmptyState
         icon={MessageSquare}
         title="No reviews yet"
-        description="Tenants can leave a review once their rental is active. Be the first to share your experience."
+        description="Tenants can leave a review once their rental is completed. Be the first to share your experience."
         className="py-10"
       />
     );

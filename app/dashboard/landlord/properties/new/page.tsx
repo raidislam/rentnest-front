@@ -4,10 +4,12 @@ import { ArrowLeft } from "lucide-react";
 import { PropertyForm } from "@/components/landlord/property-form";
 import { PageHeader } from "@/components/shared/page-header";
 import { getCurrentUser } from "@/lib/mock-data";
+import { requireUser } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "Add property" };
 
-export default function NewPropertyPage() {
+export default async function NewPropertyPage() {
+  await requireUser("LANDLORD");
   return (
     <div className="space-y-6">
       <Link

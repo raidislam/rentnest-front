@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { RegisterForm } from "@/components/auth/register-form";
+import { getOptionalUser } from "@/lib/auth/session";
+import { dashboardPath } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: "Create an account",
@@ -8,6 +11,10 @@ export const metadata: Metadata = {
 };
 
 export default async function RegisterPage({ searchParams }: PageProps<"/auth/register">) {
+  // Already signed in: go to the dashboard instead of creating another account.
+  const user = await getOptionalUser();
+  if (user) redirect(dashboardPath(user.role));
+
   const { role } = await searchParams;
   const defaultRole = typeof role === "string" && role.toUpperCase() === "LANDLORD" ? "LANDLORD" : "TENANT";
 

@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import { PropertyModeration, type PropertyFilter } from "@/components/admin/property-moderation";
 import { PageHeader } from "@/components/shared/page-header";
+import { requireUser } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "Property moderation" };
 
 const FILTERS: PropertyFilter[] = ["PENDING", "APPROVED", "REJECTED"];
 
 export default async function AdminPropertiesPage({ searchParams }: PageProps<"/dashboard/admin/properties">) {
+  await requireUser("ADMIN");
   const { status } = await searchParams;
   const initialFilter = FILTERS.includes(status as PropertyFilter) ? (status as PropertyFilter) : "ALL";
 

@@ -11,7 +11,7 @@ export const PROPERTY_TYPES: Category[] = [
 
 export const AMENITIES: Amenity[] = [
   "Air conditioning",
-  "Wi-Fi",
+  "WiFi",
   "Parking",
   "Lift",
   "Generator backup",

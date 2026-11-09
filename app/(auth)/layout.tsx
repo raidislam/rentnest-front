@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, BadgeCheck, CreditCard, MessageSquare } from "lucide-react";
 import { Logo } from "@/components/shared/logo";
-import { getPropertyById } from "@/lib/mock-data";
+import { placeholderImages } from "@/lib/placeholders";
 
 const points = [
   { icon: BadgeCheck, text: "Verified listings across Dhaka, Chattogram and Sylhet" },
@@ -12,7 +12,8 @@ const points = [
 
 // Focused split-screen layout for /auth/* pages (no marketing navbar or footer).
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
-  const image = getPropertyById("p-1006")?.images[1];
+  // Decorative only; uses the same placeholder photos as listings.
+  const image = placeholderImages("auth-layout")[1];
 
   return (
     <div className="grid min-h-dvh flex-1 lg:grid-cols-2">

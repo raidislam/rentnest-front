@@ -44,12 +44,16 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
+// Property.type and amenities are free text from the backend; keep only values this form offers.
+const isPropertyType = (value: string): value is PropertyType => (TYPE_VALUES as string[]).includes(value);
+const isAmenity = (value: string): value is Amenity => (AMENITY_VALUES as string[]).includes(value);
+
 function toDefaults(property?: Property): Partial<FormValues> {
   if (!property) return { title: "", description: "", area: "", city: "", address: "", amenities: [], images: [], isAvailable: true };
   return {
     title: property.title,
     description: property.description,
-    type: property.type,
+    type: isPropertyType(property.type) ? property.type : undefined,
     area: property.location.area,
     city: property.location.city,
     address: property.location.address,
@@ -57,7 +61,7 @@ function toDefaults(property?: Property): Partial<FormValues> {
     bedrooms: property.bedrooms,
     bathrooms: property.bathrooms,
     areaSqft: property.areaSqft,
-    amenities: property.amenities,
+    amenities: property.amenities.filter(isAmenity),
     images: property.images,
     isAvailable: property.isAvailable,
   };

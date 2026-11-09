@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { Menu, X } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { PUBLIC_NAV_LINKS, isActivePath } from "./nav-links";
 
-export function MobileNav() {
+/** `auth` is the session-aware buttons, rendered on the server by NavbarAuth. */
+export function MobileNav({ auth }: { auth: ReactNode }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const panelId = useId();
@@ -65,14 +66,7 @@ export function MobileNav() {
                 );
               })}
             </ul>
-            <div className="mt-4 grid grid-cols-2 gap-3 border-t border-stone-200 pt-4">
-              <Link href="/auth/login" className={buttonVariants({ variant: "outline" })}>
-                Log in
-              </Link>
-              <Link href="/auth/register" className={buttonVariants()}>
-                Register
-              </Link>
-            </div>
+            <div className="mt-4 grid grid-cols-2 gap-3 border-t border-stone-200 pt-4">{auth}</div>
           </nav>
         </div>
       )}

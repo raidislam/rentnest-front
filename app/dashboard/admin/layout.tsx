@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Building2, ClipboardList, LayoutDashboard, Search, Users } from "lucide-react";
 import { DashboardShell, type DashboardNavItem } from "@/components/dashboard/dashboard-shell";
-import { getCurrentUser } from "@/lib/mock-data";
+import { requireUser } from "@/lib/auth/session";
 
 export const metadata: Metadata = { robots: { index: false, follow: false } };
 
@@ -13,10 +13,10 @@ const nav: DashboardNavItem[] = [
   { href: "/properties", label: "Browse properties", icon: <Search /> },
 ];
 
-// No route protection yet — the mock admin stands in for the signed-in user.
 // Admin accounts can't be created through public registration.
-export default function AdminDashboardLayout({ children }: { children: React.ReactNode }) {
-  const user = getCurrentUser("ADMIN");
+export default async function AdminDashboardLayout({ children }: { children: React.ReactNode }) {
+  // Verified with GET /api/auth/me; redirects to login or the user's own dashboard.
+  const user = await requireUser("ADMIN");
   return (
     <DashboardShell roleLabel="Admin" nav={nav} user={user}>
       {children}

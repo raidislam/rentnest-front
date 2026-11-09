@@ -1,8 +1,11 @@
-import Link from "next/link";
+import { Suspense } from "react";
 import { Logo } from "@/components/shared/logo";
-import { buttonVariants } from "@/components/ui/button";
 import { DesktopNav } from "./desktop-nav";
 import { MobileNav } from "./mobile-nav";
+import { NavbarAuth } from "./navbar-auth";
+
+/** Same footprint as the two auth buttons, so the bar doesn't shift while the session loads. */
+const AuthPlaceholder = () => <div aria-hidden className="h-10 w-44" />;
 
 export function Navbar() {
   return (
@@ -14,15 +17,18 @@ export function Navbar() {
         </div>
 
         <div className="hidden items-center gap-2 md:flex">
-          <Link href="/auth/login" className={buttonVariants({ variant: "ghost" })}>
-            Log in
-          </Link>
-          <Link href="/auth/register" className={buttonVariants()}>
-            Register
-          </Link>
+          <Suspense fallback={<AuthPlaceholder />}>
+            <NavbarAuth layout="desktop" />
+          </Suspense>
         </div>
 
-        <MobileNav />
+        <MobileNav
+          auth={
+            <Suspense fallback={null}>
+              <NavbarAuth layout="mobile" />
+            </Suspense>
+          }
+        />
       </div>
     </header>
   );

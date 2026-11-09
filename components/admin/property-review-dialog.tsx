@@ -111,8 +111,14 @@ function ReviewBody({ property }: { property: AdminPropertyView }) {
           { label: "Type", value: propertyTypeLabel(property.type), icon: House },
           { label: "Bedrooms", value: property.bedrooms, icon: BedDouble },
           { label: "Bathrooms", value: property.bathrooms, icon: Bath },
-          { label: "Size", value: `${property.areaSqft.toLocaleString("en-IN")} sqft`, icon: Maximize2 },
-        ].map(({ label, value, icon: Icon }) => (
+          {
+            label: "Size",
+            value: property.areaSqft === undefined ? undefined : `${property.areaSqft.toLocaleString("en-IN")} sqft`,
+            icon: Maximize2,
+          },
+        ]
+          .filter(({ value }) => value !== undefined)
+          .map(({ label, value, icon: Icon }) => (
           <div key={label} className="rounded-lg border border-stone-200 p-3">
             <dt className="flex items-center gap-1.5 text-xs text-stone-500">
               {Icon && <Icon aria-hidden className="size-3.5" />}
