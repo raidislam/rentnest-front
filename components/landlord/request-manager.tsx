@@ -10,8 +10,8 @@ import {
   type StatusFilterValue,
 } from "@/components/shared/status-filter";
 import { Button } from "@/components/ui/button";
-import { useLandlordRequests } from "@/lib/mock-store";
-import type { LandlordRequestView, RequestStatus } from "@/lib/types";
+import type { MappedRentalRequest } from "@/lib/api/mappers";
+import type { RequestStatus } from "@/lib/types";
 import { LandlordRequestTable } from "./landlord-request-table";
 import { RejectRequestDialog } from "./reject-request-dialog";
 import { useRequestDecisions } from "./use-request-decisions";
@@ -25,15 +25,16 @@ const emptyCopy: Record<RequestStatus, string> = {
 };
 
 interface RequestManagerProps {
-  landlordId: string;
+  /** From GET /api/landlord/requests (server-rendered). */
+  initialRequests: MappedRentalRequest[];
   initialFilter?: StatusFilterValue;
 }
 
-export function RequestManager({ landlordId, initialFilter = "ALL" }: RequestManagerProps) {
-  const { requests, decide } = useRequestDecisions(useLandlordRequests(landlordId));
+export function RequestManager({ initialRequests, initialFilter = "ALL" }: RequestManagerProps) {
+  const { requests, decide } = useRequestDecisions(initialRequests);
   const [filter, setFilter] = useState<StatusFilterValue>(initialFilter);
-  const [rejecting, setRejecting] = useState<LandlordRequestView | null>(null);
-  // Keep a request in view while its new status is saving, so the optimistic change is visible.
+  const [rejecting, setRejecting] = useState<MappedRentalRequest | null>(null);
+  // Keep a request in view while it's saving so the spinner stays visible.
   const visible = filter === "ALL" ? requests : requests.filter((r) => r.status === filter || r.saving);
 
   if (requests.length === 0) {
@@ -75,8 +76,8 @@ export function RequestManager({ landlordId, initialFilter = "ALL" }: RequestMan
       <RejectRequestDialog
         request={rejecting}
         onClose={() => setRejecting(null)}
-        onConfirm={(note) => {
-          if (rejecting) decide(rejecting, "REJECTED", note);
+        onConfirm={() => {
+          if (rejecting) decide(rejecting, "REJECTED");
           setRejecting(null);
         }}
       />

@@ -3,7 +3,7 @@
 
 import type { AxiosInstance } from "axios";
 import type { CategoryBody, CreatedResourceDTO, RentalDTO, UnverifiedPropertyDTO, UserDTO } from "../dto";
-import { unwrap } from "../http";
+import { unwrap, unwrapVoid } from "../http";
 import {
   toProperty,
   toRentalRequest,
@@ -22,7 +22,7 @@ export async function listUsers(api: AxiosInstance): Promise<MappedUser[]> {
 
 /** PATCH /api/admin/users/:id — ban (BANNED) or unban (ACTIVE). Admins can't ban themselves. */
 export async function setUserStatus(api: AxiosInstance, id: string, status: UserStatus): Promise<void> {
-  await unwrap<unknown>(api.patch(`/admin/users/${encodeURIComponent(id)}`, toUserStatusBody(status)));
+  await unwrapVoid(api.patch(`/admin/users/${encodeURIComponent(id)}`, toUserStatusBody(status)));
 }
 
 /** GET /api/admin/properties — every property, including unavailable ones, with landlord and category. */
@@ -43,10 +43,10 @@ export async function createCategory(api: AxiosInstance, body: CategoryBody): Pr
 
 /** PUT /api/admin/categories/:id — unknown id -> 404, duplicate name -> 409. */
 export async function updateCategory(api: AxiosInstance, id: string, body: CategoryBody): Promise<void> {
-  await unwrap<unknown>(api.put(`/admin/categories/${encodeURIComponent(id)}`, body));
+  await unwrapVoid(api.put(`/admin/categories/${encodeURIComponent(id)}`, body));
 }
 
 /** DELETE /api/admin/categories/:id — a category that still has properties -> 409. */
 export async function deleteCategory(api: AxiosInstance, id: string): Promise<void> {
-  await unwrap<unknown>(api.delete(`/admin/categories/${encodeURIComponent(id)}`));
+  await unwrapVoid(api.delete(`/admin/categories/${encodeURIComponent(id)}`));
 }

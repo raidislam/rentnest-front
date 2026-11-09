@@ -44,8 +44,11 @@ export type RoleDTO = "TENANT" | "LANDLORD" | "ADMIN";
 /** DOCUMENTED in the Tenant/Landlord folder descriptions. */
 export type RentalStatusDTO = "PENDING" | "APPROVED" | "REJECTED" | "ACTIVE" | "COMPLETED";
 
-/** DOCUMENTED in the payment descriptions (create/fail/cancel). The full set is unverified. */
+/** DOCUMENTED (descriptions) + SOURCE-VERIFIED enum PaymentStatus. A gateway "cancel" is stored as FAILED. */
 export type PaymentStatusDTO = "PENDING" | "COMPLETED" | "FAILED";
+
+/** SOURCE-VERIFIED enum PaymentProvider. */
+export type PaymentProviderDTO = "STRIPE" | "SSLCOMMERZ";
 
 /* ------------------------------------------------------------------ */
 /* Categories (VERIFIED: GET /api/categories)                          */
@@ -140,29 +143,50 @@ export interface RentalDTO {
   updatedAt?: string;
   property?: UnverifiedPropertyDTO;
   tenant?: UserDTO;
-  payment?: PaymentDTO | null;
+  /**
+   * UNVERIFIED shape: documented only as "with payment" / "with payment info".
+   * Handled as an object, null, or an array; `payments` is accepted too.
+   */
+  payment?: PaymentDTO | PaymentDTO[] | null;
+  payments?: PaymentDTO[];
 }
 
 /* ------------------------------------------------------------------ */
 /* Payments                                                            */
 /* ------------------------------------------------------------------ */
 
-/** UNVERIFIED. DOCUMENTED: details include the rental request and property details. */
+/**
+ * Payment record. SOURCE-VERIFIED (backend repo prisma/schema.prisma, payment.service.ts):
+ * id, transactionId, rentalRequestId, amount (Decimal -> string), method ("ONLINE"),
+ * provider (STRIPE | SSLCOMMERZ), status, paidAt, createdAt, updatedAt.
+ * GET /payments includes rentalRequest.property { id, title, location };
+ * GET /payments/:id includes rentalRequest.property with category.
+ * Not observed live (the QA tenant has no payments), so fields stay optional.
+ */
 export interface PaymentDTO {
   id?: string;
   rentalRequestId?: string;
   amount?: string | number;
   status?: PaymentStatusDTO;
   transactionId?: string;
+  method?: string;
+  provider?: PaymentProviderDTO;
+  paidAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
   rentalRequest?: RentalDTO;
+  /** UNVERIFIED: payment details are documented as including "property details"; nesting unknown. */
+  property?: UnverifiedPropertyDTO;
 }
 
-/** DOCUMENTED: POST /api/payments/create returns paymentId and transactionId (test script) and paymentUrl (description). */
+/**
+ * DOCUMENTED: POST /api/payments/create returns paymentId and transactionId (test script) and paymentUrl (description).
+ * SOURCE-VERIFIED: also `amount`. `paymentUrl` is SSLCommerz's GatewayPageURL.
+ */
 export interface CreatePaymentResultDTO {
   paymentId: string;
   transactionId: string;
+  amount?: string | number;
   paymentUrl: string;
 }
 

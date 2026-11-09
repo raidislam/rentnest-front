@@ -5,7 +5,7 @@
 import type { AxiosInstance } from "axios";
 import type { ConfirmPaymentBody, CreatePaymentBody, CreatePaymentResultDTO, PaymentDTO } from "../dto";
 import { unwrap } from "../http";
-import { toPayment, type MappedPayment } from "../mappers";
+import { mapList, toPayment, type MappedPayment } from "../mappers";
 
 /**
  * POST /api/payments/create — for an APPROVED request. Redirect the browser to
@@ -13,17 +13,22 @@ import { toPayment, type MappedPayment } from "../mappers";
  */
 export async function createPayment(api: AxiosInstance, body: CreatePaymentBody): Promise<CreatePaymentResultDTO> {
   const data = await unwrap<CreatePaymentResultDTO>(api.post("/payments/create", body));
-  return { paymentId: data.paymentId, transactionId: data.transactionId, paymentUrl: data.paymentUrl };
+  return { paymentId: data.paymentId, transactionId: data.transactionId, amount: data.amount, paymentUrl: data.paymentUrl };
 }
 
-/** POST /api/payments/confirm — manual confirmation with SSLCommerz tran_id and val_id. */
-export async function confirmPayment(api: AxiosInstance, body: ConfirmPaymentBody): Promise<void> {
-  await unwrap<unknown>(api.post("/payments/confirm", body));
+/**
+ * POST /api/payments/confirm — the backend validates val_id with SSLCommerz (status, tran_id,
+ * amount, currency) before marking the payment COMPLETED and the rental ACTIVE.
+ * Returns the backend's payment record (source-verified: the updated payment).
+ */
+export async function confirmPayment(api: AxiosInstance, body: ConfirmPaymentBody): Promise<MappedPayment | null> {
+  const data = await unwrap<PaymentDTO | null>(api.post("/payments/confirm", body));
+  return data ? toPayment(data) : null;
 }
 
 /** GET /api/payments — the signed-in tenant's payments. */
 export async function listMyPayments(api: AxiosInstance): Promise<MappedPayment[]> {
-  return (await unwrap<PaymentDTO[]>(api.get("/payments"))).map(toPayment);
+  return mapList(await unwrap<PaymentDTO[]>(api.get("/payments")), toPayment, "payment");
 }
 
 /** GET /api/payments/:id — with rental request and property details. */

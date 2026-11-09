@@ -1,96 +1,149 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CircleCheck, Info, SearchX } from "lucide-react";
-import { paymentMethodLabel } from "@/components/shared/payment-status-badge";
+import { CircleAlert, CircleCheck, Clock, LogIn, SearchX, type LucideIcon } from "lucide-react";
 import { PaymentResult } from "@/components/shared/payment-result";
+import { PaymentStatusBadge, paymentMethodLabel } from "@/components/shared/payment-status-badge";
+import { tenantRequestPath } from "@/components/tenant/request-actions";
 import { buttonVariants } from "@/components/ui/button";
-import { getCurrentUser, getTenantRequestById } from "@/lib/mock-data";
-import type { PaymentMethod } from "@/lib/types";
-import { formatDate, formatPrice } from "@/lib/utils";
+import type { MappedPayment } from "@/lib/api/mappers";
+import { confirmMyPayment, findMyPaymentByTransaction } from "@/lib/api/tenant";
+import { getOptionalUser } from "@/lib/auth/session";
+import { readGatewayId } from "@/lib/payments";
+import { compact, formatDate, formatPrice } from "@/lib/utils";
 
-export const metadata: Metadata = { title: "Payment successful", robots: { index: false } };
+type Row = { term: string; detail: React.ReactNode };
 
-const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+export const metadata: Metadata = { title: "Payment status", robots: { index: false } };
 
+/**
+ * Payment return page. Nothing here is trusted from the URL alone:
+ * - tran_id + val_id -> POST /api/payments/confirm; the backend validates val_id with SSLCommerz.
+ * - tran_id only      -> the payment's real status from GET /api/payments.
+ * Success is shown only when the backend reports the payment as COMPLETED.
+ *
+ * Note: with the backend's current SSLCommerz settings (per its .env.example), the gateway returns
+ * users to the backend's own /api/payments/success, which confirms the payment server-side.
+ */
 export default async function PaymentSuccessPage({ searchParams }: PageProps<"/payment/success">) {
   const params = await searchParams;
-  const ref = first(params.ref);
-  const methodParam = first(params.method);
-  const method: PaymentMethod = methodParam === "STRIPE" ? "STRIPE" : "SSLCOMMERZ";
-  // Future: verify the payment with GET /api/payments using the gateway's reference.
-  const request = getTenantRequestById(getCurrentUser("TENANT").id, first(params.request) ?? "");
+  const tranId = readGatewayId(params.tran_id);
+  const valId = readGatewayId(params.val_id);
 
-  if (!request || !ref) {
+  if (!tranId) {
+    return (
+      <Outcome icon={SearchX} title="We couldn't confirm this payment" description="This link doesn't include a valid transaction reference, so we can't check the payment. Your request page always shows the latest status." />
+    );
+  }
+
+  const user = await getOptionalUser();
+  if (!user || user.role !== "TENANT") {
+    const next = `/payment/success?${new URLSearchParams({ tran_id: tranId, ...(valId ? { val_id: valId } : {}) })}`;
+    return (
+      <Outcome
+        icon={LogIn}
+        title="Log in to check your payment"
+        description="Payment status is private. Log in with the tenant account that made the payment to see it."
+        action={
+          <Link href={`/auth/login?next=${encodeURIComponent(next)}`} className={buttonVariants({ size: "lg" })}>
+            Log in
+          </Link>
+        }
+      />
+    );
+  }
+
+  let payment: MappedPayment | null = null;
+  let backendMessage: string | null = null;
+  if (valId) {
+    const outcome = await confirmMyPayment(tranId, valId);
+    if (outcome.ok) payment = outcome.payment;
+    else backendMessage = outcome.message;
+  }
+  // Always read the stored status too (also covers confirm responses without a body).
+  payment = (await findMyPaymentByTransaction(tranId)) ?? payment;
+
+  if (payment?.status === "PAID") {
     return (
       <PaymentResult
-        icon={SearchX}
-        tone="neutral"
-        title="We couldn't find this payment"
-        description="The confirmation link is incomplete. If you were charged, the payment will still appear in your payment history."
+        icon={CircleCheck}
+        tone="success"
+        title="Payment confirmed"
+        description="RentNest has confirmed your payment with SSLCommerz. Your rental is now active."
+        rows={receiptRows(payment)}
       >
-        <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
-          <Link href="/dashboard/tenant" className={buttonVariants({ size: "lg" })}>
-            Go to tenant dashboard
-          </Link>
-        </div>
+        <Actions payment={payment} />
       </PaymentResult>
     );
   }
 
-  const nextSteps = [
-    "Your rental request will be marked as Active.",
-    "This payment will appear in your payment history.",
-    `Move in from ${formatDate(request.moveInDate)} — and leave a review once you've settled in.`,
-  ];
+  if (payment?.status === "PENDING" && !backendMessage) {
+    return (
+      <Outcome
+        icon={Clock}
+        title="Payment not confirmed yet"
+        description="We haven't received a confirmation from SSLCommerz for this payment. If you completed it, check again in a moment — your request page shows the latest status."
+        rows={receiptRows(payment)}
+        action={<Actions payment={payment} />}
+      />
+    );
+  }
 
   return (
-    <PaymentResult
-      icon={CircleCheck}
-      tone="success"
-      title="Payment successful"
+    <Outcome
+      icon={CircleAlert}
+      title="Payment not confirmed"
       description={
         <>
-          You paid <span className="font-semibold text-stone-900">{formatPrice(request.monthlyRent)}</span> for{" "}
-          {request.property.title}.
+          {backendMessage ?? (payment?.status === "FAILED" ? "This payment didn't go through." : "We couldn't find this payment in your account.")}{" "}
+          You haven&apos;t been marked as paid. If your request is still approved, you can try again.
         </>
       }
-      rows={[
-        { term: "Reference", detail: <span className="font-mono">{ref}</span> },
-        { term: "Property", detail: request.property.title },
-        { term: "Amount", detail: formatPrice(request.monthlyRent) },
-        { term: "Payment method", detail: paymentMethodLabel[method] },
-        { term: "Date", detail: formatDate(new Date().toISOString()) },
-      ]}
-    >
-      <section aria-labelledby="next-steps" className="mt-6 rounded-xl border border-stone-200 bg-white p-5 text-left">
-        <h2 id="next-steps" className="text-sm font-semibold text-stone-900">
-          What happens next
-        </h2>
-        <ol className="mt-3 space-y-2 text-sm text-stone-600">
-          {nextSteps.map((step, i) => (
-            <li key={step} className="flex gap-3">
-              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-medium text-brand-800">
-                {i + 1}
-              </span>
-              {step}
-            </li>
-          ))}
-        </ol>
-      </section>
+      rows={payment ? receiptRows(payment) : undefined}
+      action={<Actions payment={payment} />}
+    />
+  );
+}
 
-      <p className="mt-4 flex items-start justify-center gap-1.5 text-xs text-stone-500">
-        <Info aria-hidden className="mt-px size-3.5 shrink-0" />
-        Demo mode: this is a simulated payment. No real transaction was processed.
-      </p>
+function receiptRows(p: MappedPayment) {
+  return compact<Row>([
+    { term: "Status", detail: <PaymentStatusBadge status={p.status} /> },
+    p.propertyTitle && { term: "Property", detail: p.propertyTitle },
+    p.amount !== undefined && { term: "Amount", detail: formatPrice(p.amount) },
+    p.transactionId && { term: "Transaction", detail: <span className="font-mono">{p.transactionId}</span> },
+    p.method && { term: "Gateway", detail: paymentMethodLabel[p.method] },
+    p.paidAt && { term: "Paid on", detail: formatDate(p.paidAt) },
+  ]);
+}
 
-      <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
-        <Link href="/dashboard/tenant" className={buttonVariants({ size: "lg" })}>
-          Go to tenant dashboard
+function Actions({ payment }: { payment: MappedPayment | null }) {
+  return (
+    <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
+      {payment?.rentalRequestId ? (
+        <Link href={tenantRequestPath(payment.rentalRequestId)} className={buttonVariants({ size: "lg" })}>
+          View rental request
         </Link>
-        <Link href="/dashboard/tenant/requests" className={buttonVariants({ variant: "outline", size: "lg" })}>
+      ) : (
+        <Link href="/dashboard/tenant/requests" className={buttonVariants({ size: "lg" })}>
           View my requests
         </Link>
-      </div>
+      )}
+      <Link href="/dashboard/tenant" className={buttonVariants({ variant: "outline", size: "lg" })}>
+        Go to dashboard
+      </Link>
+    </div>
+  );
+}
+
+function Outcome(props: {
+  icon: LucideIcon;
+  title: string;
+  description: React.ReactNode;
+  rows?: { term: string; detail: React.ReactNode }[];
+  action?: React.ReactNode;
+}) {
+  return (
+    <PaymentResult icon={props.icon} tone="neutral" title={props.title} description={props.description} rows={props.rows}>
+      {props.action ?? <Actions payment={null} />}
     </PaymentResult>
   );
 }

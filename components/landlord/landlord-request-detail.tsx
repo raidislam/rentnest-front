@@ -6,7 +6,6 @@ import { useState } from "react";
 import {
   ArrowLeft,
   BadgeCheck,
-  CalendarDays,
   Check,
   CircleCheckBig,
   CircleX,
@@ -15,19 +14,16 @@ import {
   LoaderCircle,
   Mail,
   MapPin,
-  Phone,
-  SearchX,
   X,
   type LucideIcon,
 } from "lucide-react";
 import { Avatar } from "@/components/shared/avatar";
-import { EmptyState } from "@/components/shared/empty-state";
 import { PaymentStatusBadge, paymentMethodLabel } from "@/components/shared/payment-status-badge";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { useLandlordRequests } from "@/lib/mock-store";
+import type { MappedRentalRequest } from "@/lib/api/mappers";
 import type { RequestStatus } from "@/lib/types";
-import { cn, formatDate, formatPrice, isOptimizableImage } from "@/lib/utils";
+import { cn, formatDate, formatLocation, formatPrice } from "@/lib/utils";
 import { RejectRequestDialog } from "./reject-request-dialog";
 import { useRequestDecisions } from "./use-request-decisions";
 
@@ -39,45 +35,30 @@ const panel: Record<RequestStatus, { icon: LucideIcon; box: string; iconColor: s
   COMPLETED: { icon: CircleCheckBig, box: "border-stone-200 bg-stone-100/70", iconColor: "text-stone-600", title: "Rental completed" },
 };
 
-export function LandlordRequestDetail({ landlordId, requestId }: { landlordId: string; requestId: string }) {
-  const { requests, decide } = useRequestDecisions(useLandlordRequests(landlordId));
+/** One request from GET /api/landlord/requests (there is no single-request endpoint). */
+export function LandlordRequestDetail({ request: initial }: { request: MappedRentalRequest }) {
+  const {
+    requests: [request],
+    decide,
+  } = useRequestDecisions([initial]);
   const [rejecting, setRejecting] = useState(false);
-  const request = requests.find((r) => r.id === requestId);
-
-  if (!request) {
-    return (
-      <EmptyState
-        icon={SearchX}
-        as="h1"
-        title="We couldn't find that request"
-        description="It may have been removed, or it belongs to another landlord's property."
-        className="mx-auto mt-8 max-w-lg"
-        action={
-          <Link href="/dashboard/landlord/requests" className={buttonVariants()}>
-            View all requests
-          </Link>
-        }
-      />
-    );
-  }
 
   const { tenant, property } = request;
-  const firstName = tenant.name.split(" ")[0];
+  const firstName = tenant?.name.split(" ")[0] ?? "the tenant";
   const { icon: Icon, box, iconColor, title } = panel[request.status];
   const body: Record<RequestStatus, string> = {
-    PENDING: `Review ${firstName}'s request below. Approving lets them pay the first month's rent to confirm the rental.`,
+    PENDING: `Review this request below. Approving lets ${firstName} pay to confirm the rental.`,
     APPROVED: `You approved this request. Waiting for ${firstName} to complete payment.`,
-    REJECTED: request.landlordNote ? `You declined this request with the note: “${request.landlordNote}”` : "You declined this request.",
+    REJECTED: "You declined this request.",
     ACTIVE: `${firstName} has paid and is currently renting this property.`,
     COMPLETED: "This rental has ended.",
   };
 
+  // Move-in date and duration aren't backend fields; tenants include them in the message.
   const details = [
-    { term: "Submitted", detail: formatDate(request.createdAt) },
-    { term: "Preferred move-in", detail: formatDate(request.moveInDate) },
-    { term: "Duration", detail: `${request.durationMonths} months` },
-    { term: "Monthly rent", detail: formatPrice(request.monthlyRent) },
-  ];
+    request.createdAt && { term: "Submitted", detail: formatDate(request.createdAt) },
+    request.monthlyRent !== undefined && { term: "Monthly rent", detail: formatPrice(request.monthlyRent) },
+  ].filter((d): d is { term: string; detail: string } => !!d);
 
   return (
     <div className="space-y-6">
@@ -94,7 +75,9 @@ export function LandlordRequestDetail({ landlordId, requestId }: { landlordId: s
           <p className="text-sm text-stone-500">
             Request <span className="font-mono">{request.id}</span>
           </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-stone-900 sm:text-3xl">Request from {tenant.name}</h1>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-stone-900 sm:text-3xl">
+            {tenant ? `Request from ${tenant.name}` : property ? `Request for ${property.title}` : "Rental request"}
+          </h1>
         </div>
         <StatusBadge status={request.status} className="self-start text-sm" />
       </header>
@@ -137,18 +120,23 @@ export function LandlordRequestDetail({ landlordId, requestId }: { landlordId: s
             <h2 id="request-details" className="font-semibold">
               Request details
             </h2>
-            <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
-              {details.map(({ term, detail }) => (
-                <div key={term}>
-                  <dt className="text-sm text-stone-500">{term}</dt>
-                  <dd className="mt-0.5 font-medium text-stone-900">{detail}</dd>
-                </div>
-              ))}
-            </dl>
-            <div className="mt-6 border-t border-stone-100 pt-5">
-              <h3 className="text-sm font-medium text-stone-500">Message from {firstName}</h3>
-              <blockquote className="mt-2 rounded-lg bg-stone-50 p-4 text-stone-700">{request.message}</blockquote>
-            </div>
+            {details.length > 0 && (
+              <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
+                {details.map(({ term, detail }) => (
+                  <div key={term}>
+                    <dt className="text-sm text-stone-500">{term}</dt>
+                    <dd className="mt-0.5 font-medium text-stone-900">{detail}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+            {request.message && (
+              <div className={details.length > 0 ? "mt-6 border-t border-stone-100 pt-5" : "mt-4"}>
+                <h3 className="text-sm font-medium text-stone-500">Message from {firstName}</h3>
+                {/* Includes the applicant details (phone, move-in date, duration) added by the tenant form. */}
+                <blockquote className="mt-2 rounded-lg bg-stone-50 p-4 whitespace-pre-line text-stone-700">{request.message}</blockquote>
+              </div>
+            )}
           </section>
 
           <section aria-labelledby="request-payments" className="rounded-xl border border-stone-200 bg-white p-5 sm:p-6">
@@ -160,9 +148,9 @@ export function LandlordRequestDetail({ landlordId, requestId }: { landlordId: s
                 {request.payments.map((p) => (
                   <li key={p.id} className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
                     <div>
-                      <p className="font-medium text-stone-900">{formatPrice(p.amount)}</p>
+                      <p className="font-medium text-stone-900">{p.amount !== undefined ? formatPrice(p.amount) : "Payment"}</p>
                       <p className="text-sm text-stone-500">
-                        {formatDate(p.createdAt)} · {paymentMethodLabel[p.method]}
+                        {[p.createdAt && formatDate(p.createdAt), p.method && paymentMethodLabel[p.method]].filter(Boolean).join(" · ")}
                       </p>
                     </div>
                     <PaymentStatusBadge status={p.status} />
@@ -170,60 +158,49 @@ export function LandlordRequestDetail({ landlordId, requestId }: { landlordId: s
                 ))}
               </ul>
             ) : (
-              <p className="mt-3 text-sm text-stone-600">No payments have been made for this request yet.</p>
+              <p className="mt-3 text-sm text-stone-600">
+                {request.paymentsIncluded
+                  ? "No payments have been made for this request yet."
+                  : "Payment details aren't available for this request."}
+              </p>
             )}
           </section>
         </div>
 
         <aside className="space-y-6">
-          <section aria-labelledby="tenant-heading" className="rounded-xl border border-stone-200 bg-white p-5">
-            <h2 id="tenant-heading" className="text-sm font-medium text-stone-500">
-              Tenant
-            </h2>
-            <div className="mt-3 flex items-center gap-3">
-              <Avatar name={tenant.name} src={tenant.avatarUrl} size="lg" />
-              <div>
+          {/* Shown only if the backend includes the tenant; contact details are also in the message. */}
+          {tenant && (
+            <section aria-labelledby="tenant-heading" className="rounded-xl border border-stone-200 bg-white p-5">
+              <h2 id="tenant-heading" className="text-sm font-medium text-stone-500">
+                Tenant
+              </h2>
+              <div className="mt-3 flex items-center gap-3">
+                <Avatar name={tenant.name} size="lg" />
                 <p className="font-semibold text-stone-900">{tenant.name}</p>
-                <p className="flex items-center gap-1.5 text-sm text-stone-500">
-                  <CalendarDays aria-hidden className="size-3.5" />
-                  Member since {formatDate(tenant.createdAt)}
-                </p>
               </div>
-            </div>
-            <ul className="mt-4 space-y-2 text-sm">
-              <li>
-                <a href={`mailto:${tenant.email}`} className="flex items-center gap-2 rounded py-0.5 break-all text-stone-700 hover:text-brand-700">
+              {tenant.email && (
+                <a
+                  href={`mailto:${tenant.email}`}
+                  className="mt-4 flex items-center gap-2 rounded py-0.5 text-sm break-all text-stone-700 hover:text-brand-700"
+                >
                   <Mail aria-hidden className="size-4 shrink-0 text-stone-400" />
                   {tenant.email}
                 </a>
-              </li>
-              <li>
-                <a href={`tel:${tenant.phone.replace(/[\s-]/g, "")}`} className="flex items-center gap-2 rounded py-0.5 text-stone-700 hover:text-brand-700">
-                  <Phone aria-hidden className="size-4 text-stone-400" />
-                  {tenant.phone}
-                </a>
-              </li>
-            </ul>
-          </section>
+              )}
+            </section>
+          )}
 
           <section aria-label="Property" className="overflow-hidden rounded-xl border border-stone-200 bg-white">
             {property ? (
               <>
                 <div className="relative aspect-16/10 bg-stone-100">
-                  <Image
-                    src={property.images[0]}
-                    alt=""
-                    fill
-                    sizes="(min-width: 1024px) 320px, 100vw"
-                    unoptimized={!isOptimizableImage(property.images[0])}
-                    className="object-cover"
-                  />
+                  <Image src={property.images[0]} alt="" fill sizes="(min-width: 1024px) 320px, 100vw" className="object-cover" />
                 </div>
                 <div className="p-5">
                   <h2 className="font-semibold text-stone-900">{property.title}</h2>
                   <p className="mt-1 flex items-start gap-1.5 text-sm text-stone-600">
                     <MapPin aria-hidden className="mt-0.5 size-4 shrink-0 text-stone-400" />
-                    {property.location.area}, {property.location.city}
+                    {formatLocation(property.location)}
                   </p>
                   <Link
                     href={`/dashboard/landlord/properties/${property.id}/edit`}
@@ -234,7 +211,7 @@ export function LandlordRequestDetail({ landlordId, requestId }: { landlordId: s
                 </div>
               </>
             ) : (
-              <p className="p-5 text-sm text-stone-500 italic">This property has been removed from your listings.</p>
+              <p className="p-5 text-sm text-stone-500 italic">This property is no longer in your listings.</p>
             )}
           </section>
         </aside>
@@ -243,8 +220,8 @@ export function LandlordRequestDetail({ landlordId, requestId }: { landlordId: s
       <RejectRequestDialog
         request={rejecting ? request : null}
         onClose={() => setRejecting(false)}
-        onConfirm={(note) => {
-          decide(request, "REJECTED", note);
+        onConfirm={() => {
+          decide(request, "REJECTED");
           setRejecting(false);
         }}
       />

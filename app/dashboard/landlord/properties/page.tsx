@@ -4,13 +4,14 @@ import { Plus } from "lucide-react";
 import { PropertyManager } from "@/components/landlord/property-manager";
 import { PageHeader } from "@/components/shared/page-header";
 import { buttonVariants } from "@/components/ui/button";
-import { getCurrentUser } from "@/lib/mock-data";
+import { getPropertiesAndRequests } from "@/lib/api/landlord";
 import { requireUser } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "My properties" };
 
 export default async function LandlordPropertiesPage() {
   await requireUser("LANDLORD");
+  const { properties, requests } = await getPropertiesAndRequests();
   return (
     <div className="space-y-8">
       <PageHeader
@@ -23,7 +24,7 @@ export default async function LandlordPropertiesPage() {
           </Link>
         }
       />
-      <PropertyManager landlordId={getCurrentUser("LANDLORD").id} />
+      <PropertyManager initialProperties={properties} requests={requests} />
     </div>
   );
 }

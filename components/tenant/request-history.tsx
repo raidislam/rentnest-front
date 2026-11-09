@@ -11,7 +11,8 @@ import {
   type StatusFilterValue as Filter,
 } from "@/components/shared/status-filter";
 import { Button, buttonVariants } from "@/components/ui/button";
-import type { RentalRequestDetails, RequestStatus } from "@/lib/types";
+import type { MappedRentalRequest } from "@/lib/api/mappers";
+import type { RequestStatus } from "@/lib/types";
 import { RequestTable } from "./request-table";
 
 const emptyCopy: Record<RequestStatus, string> = {
@@ -23,7 +24,7 @@ const emptyCopy: Record<RequestStatus, string> = {
 };
 
 interface RequestHistoryProps {
-  requests: RentalRequestDetails[];
+  requests: MappedRentalRequest[];
   initialFilter?: Filter;
 }
 

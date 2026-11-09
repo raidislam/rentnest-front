@@ -3,15 +3,15 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useId } from "react";
-import { Bath, BedDouble, ClipboardList, Eye, Hourglass, LoaderCircle, MapPin, Maximize2, Pencil, Trash2 } from "lucide-react";
+import { Bath, BedDouble, ClipboardList, Eye, LoaderCircle, MapPin, Maximize2, Pencil, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import type { Property } from "@/lib/types";
-import { cn, formatPrice, isOptimizableImage, propertyTypeLabel } from "@/lib/utils";
+import type { MappedProperty } from "@/lib/api/mappers";
+import { cn, formatLocation, formatPrice, propertyTypeLabel } from "@/lib/utils";
 
 interface LandlordPropertyCardProps {
-  property: Property;
+  property: MappedProperty;
   requestCount: number;
   pendingCount: number;
   onToggleAvailability: (next: boolean) => void;
@@ -29,8 +29,9 @@ export function LandlordPropertyCard({
   onDelete,
 }: LandlordPropertyCardProps) {
   const labelId = useId();
-  const { id, title, location, price, type, bedrooms, bathrooms, areaSqft, images, isAvailable, status } = property;
-  const isPublic = status === "APPROVED";
+  const { id, title, location, price, type, bedrooms, bathrooms, areaSqft, images, isAvailable } = property;
+  // No moderation on the backend: available properties appear in public search, unavailable ones are hidden.
+  const isPublic = isAvailable;
 
   return (
     <article className="flex flex-col overflow-hidden rounded-xl border border-stone-200 bg-white">
@@ -40,18 +41,10 @@ export function LandlordPropertyCard({
           alt=""
           fill
           sizes="(min-width: 1280px) 380px, (min-width: 640px) 50vw, 100vw"
-          unoptimized={!isOptimizableImage(images[0])}
           className="object-cover"
         />
         <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
           <Badge tone="white">{propertyTypeLabel(type)}</Badge>
-          {status === "PENDING" && (
-            <Badge tone="amber">
-              <Hourglass />
-              Pending review
-            </Badge>
-          )}
-          {status === "REJECTED" && <Badge tone="red">Not approved</Badge>}
         </div>
       </div>
 
@@ -61,24 +54,24 @@ export function LandlordPropertyCard({
           <span className="text-sm font-normal text-stone-500"> /month</span>
         </p>
         <h3 className="mt-0.5 line-clamp-2 font-medium text-stone-900">{title}</h3>
-        {status === "REJECTED" && property.moderationNote && (
-          <p className="mt-1 rounded-md bg-red-50 px-2 py-1 text-sm text-red-800">Not approved: {property.moderationNote}</p>
-        )}
         <p className="mt-1 flex items-center gap-1 text-sm text-stone-600">
           <MapPin aria-hidden className="size-4 shrink-0 text-stone-400" />
-          <span className="truncate">
-            {location.area}, {location.city}
-          </span>
+          <span className="truncate">{formatLocation({ ...location, address: "" })}</span>
         </p>
+        {(bedrooms !== undefined || bathrooms !== undefined || areaSqft !== undefined) && (
         <ul aria-label="Property size" className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-stone-600">
-          <li className="flex items-center gap-1.5">
-            <BedDouble aria-hidden className="size-4 text-stone-400" />
-            {bedrooms} bd
-          </li>
-          <li className="flex items-center gap-1.5">
-            <Bath aria-hidden className="size-4 text-stone-400" />
-            {bathrooms} ba
-          </li>
+          {bedrooms !== undefined && (
+            <li className="flex items-center gap-1.5">
+              <BedDouble aria-hidden className="size-4 text-stone-400" />
+              {bedrooms} bd
+            </li>
+          )}
+          {bathrooms !== undefined && (
+            <li className="flex items-center gap-1.5">
+              <Bath aria-hidden className="size-4 text-stone-400" />
+              {bathrooms} ba
+            </li>
+          )}
           {areaSqft !== undefined && (
             <li className="flex items-center gap-1.5">
               <Maximize2 aria-hidden className="size-4 text-stone-400" />
@@ -86,6 +79,7 @@ export function LandlordPropertyCard({
             </li>
           )}
         </ul>
+        )}
 
         <Link
           href="/dashboard/landlord/requests"
@@ -101,7 +95,7 @@ export function LandlordPropertyCard({
             <p id={labelId} className="text-sm font-medium text-stone-900">
               {isAvailable ? "Available" : "Unavailable"}
             </p>
-            <p className="text-xs text-stone-500">{isAvailable ? "Accepting requests" : "Not accepting requests"}</p>
+            <p className="text-xs text-stone-500">{isAvailable ? "Shown in search, accepting requests" : "Hidden from public search"}</p>
           </div>
           <div className="flex items-center gap-2">
             {togglingAvailability && <LoaderCircle aria-label="Saving" className="size-4 animate-spin text-stone-400" />}
@@ -123,7 +117,7 @@ export function LandlordPropertyCard({
             </Link>
           ) : (
             <span
-              title="Visible to renters after approval"
+              title="Hidden from public search while unavailable"
               className={cn(buttonVariants({ variant: "outline", size: "sm" }), "pointer-events-none opacity-50")}
               aria-disabled
             >

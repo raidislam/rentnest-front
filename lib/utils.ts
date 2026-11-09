@@ -66,3 +66,8 @@ export function isOptimizableImage(src: string) {
     return false;
   }
 }
+
+/** Drops falsy entries, e.g. optional rows built with `condition && { ... }`. */
+export function compact<T>(items: (T | false | null | undefined | "" | 0)[]): T[] {
+  return items.filter(Boolean) as T[];
+}

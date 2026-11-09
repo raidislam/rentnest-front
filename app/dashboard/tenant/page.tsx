@@ -9,24 +9,21 @@ import { ActiveRentalCard } from "@/components/tenant/active-rental-card";
 import { tenantPaymentPath } from "@/components/tenant/request-actions";
 import { RequestTable } from "@/components/tenant/request-table";
 import { buttonVariants } from "@/components/ui/button";
-import { getCurrentUser, getTenantPayments, getTenantRequests } from "@/lib/mock-data";
-import { formatDate, formatPrice } from "@/lib/utils";
+import { getMyPayments, getMyRentals } from "@/lib/api/tenant";
 import { requireUser } from "@/lib/auth/session";
+import { formatDate, formatPrice } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Tenant dashboard" };
 
 export default async function TenantDashboardPage() {
   const session = await requireUser("TENANT");
-  // Page data is still mock data (wired to the API in a later step); the greeting uses the signed-in user.
-  const tenant = getCurrentUser("TENANT");
-  // Future: GET /api/rentals and GET /api/payments
-  const requests = getTenantRequests(tenant.id);
-  const payments = getTenantPayments(tenant.id);
+  // GET /api/rentals and GET /api/payments (read-only payment history).
+  const [requests, payments] = await Promise.all([getMyRentals(), getMyPayments()]);
 
   const count = (status: string) => requests.filter((r) => r.status === status).length;
   const activeRentals = requests.filter((r) => r.status === "ACTIVE");
   const awaitingPayment = requests.filter((r) => r.status === "APPROVED");
-  const totalPaid = payments.filter((p) => p.status === "PAID").reduce((sum, p) => sum + p.amount, 0);
+  const totalPaid = payments.filter((p) => p.status === "PAID").reduce((sum, p) => sum + (p.amount ?? 0), 0);
 
   return (
     <div className="space-y-10">
@@ -56,8 +53,10 @@ export default async function TenantDashboardPage() {
           <div className="flex gap-3">
             <BadgeCheck aria-hidden className="mt-0.5 size-5 shrink-0 text-sky-700" />
             <div>
-              <p className="font-medium text-sky-950">Your request for {r.property.title} was approved</p>
-              <p className="text-sm text-sky-900/80">Complete payment of {formatPrice(r.monthlyRent)} to activate your rental.</p>
+              <p className="font-medium text-sky-950">Your request for {r.property?.title ?? "a property"} was approved</p>
+              <p className="text-sm text-sky-900/80">
+                Complete payment{r.monthlyRent !== undefined && ` of ${formatPrice(r.monthlyRent)}`} to activate your rental.
+              </p>
             </div>
           </div>
           <Link href={tenantPaymentPath(r.id)} className={buttonVariants({ className: "w-full sm:w-auto" })}>
@@ -144,15 +143,22 @@ export default async function TenantDashboardPage() {
                     <Wallet aria-hidden className="size-[18px]" />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-stone-900">{p.property?.title ?? "Rental payment"}</p>
+                    <Link href={`/dashboard/tenant/payments/${p.id}`} className="block truncate rounded font-medium text-stone-900 hover:text-brand-700">
+                      {p.propertyTitle ?? "Rental payment"}
+                    </Link>
                     <p className="text-sm text-stone-500">
-                      {formatDate(p.createdAt)} · {paymentMethodLabel[p.method]} ·{" "}
-                      <span className="font-mono text-xs">{p.transactionId}</span>
+                      {[p.createdAt && formatDate(p.createdAt), p.method && paymentMethodLabel[p.method]].filter(Boolean).join(" · ")}
+                      {p.transactionId && (
+                        <>
+                          {" · "}
+                          <span className="font-mono text-xs">{p.transactionId}</span>
+                        </>
+                      )}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
                     <PaymentStatusBadge status={p.status} />
-                    <span className="w-24 text-right font-semibold text-stone-900">{formatPrice(p.amount)}</span>
+                    <span className="w-24 text-right font-semibold text-stone-900">{p.amount !== undefined ? formatPrice(p.amount) : "—"}</span>
                   </div>
                 </li>
               ))}

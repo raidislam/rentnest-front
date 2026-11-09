@@ -64,3 +64,18 @@ export async function unwrap<T>(request: Promise<AxiosResponse<unknown>>): Promi
 
   return body.data;
 }
+
+/**
+ * For endpoints whose success body isn't used (and isn't verified): PUT, PATCH,
+ * DELETE, etc. Any 2xx response counts as success — with or without `data`,
+ * or with an empty body. Throws ApiError only for failures.
+ */
+export async function unwrapVoid(request: Promise<AxiosResponse<unknown>>): Promise<void> {
+  let response: AxiosResponse<unknown>;
+  try {
+    response = await request;
+  } catch (error) {
+    throw toApiError(error);
+  }
+  if (isApiFailure(response.data)) throw apiErrorFromBody(response.data, response.status);
+}

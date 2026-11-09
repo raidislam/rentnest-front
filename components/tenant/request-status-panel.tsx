@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { BadgeCheck, CircleCheckBig, CircleX, CreditCard, Hourglass, House, Search, type LucideIcon } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
-import type { RentalRequestDetails, RequestStatus } from "@/lib/types";
+import type { MappedRentalRequest } from "@/lib/api/mappers";
+import type { RequestStatus } from "@/lib/types";
 import { cn, formatPrice } from "@/lib/utils";
-import { LeaveReviewButton } from "./leave-review-button";
 import { tenantPaymentPath } from "./request-actions";
 
 const styles: Record<RequestStatus, { icon: LucideIcon; box: string; iconColor: string }> = {
@@ -15,18 +15,19 @@ const styles: Record<RequestStatus, { icon: LucideIcon; box: string; iconColor: 
 };
 
 /** Status-specific explanation and next step for a tenant's request. */
-export function RequestStatusPanel({ request }: { request: RentalRequestDetails }) {
+export function RequestStatusPanel({ request }: { request: MappedRentalRequest }) {
   const { icon: Icon, box, iconColor } = styles[request.status];
-  const landlordFirst = request.landlord.name.split(" ")[0];
+  const landlord = request.property?.landlord?.name.split(" ")[0] ?? "The landlord";
+  const amount = request.monthlyRent !== undefined ? ` ${formatPrice(request.monthlyRent)}` : "";
 
   const content: Record<RequestStatus, { title: string; body: React.ReactNode; action?: React.ReactNode }> = {
     PENDING: {
       title: "Pending review",
-      body: `${landlordFirst} hasn't responded yet. You'll be able to pay once your request is approved — there's nothing to do for now.`,
+      body: `${landlord} hasn't responded yet. You'll be able to pay once your request is approved — there's nothing to do for now.`,
     },
     APPROVED: {
       title: "Approved — ready for payment",
-      body: `Good news! ${landlordFirst} approved your request. Pay ${formatPrice(request.monthlyRent)} to confirm and activate your rental.`,
+      body: `Good news! ${landlord} approved your request. Pay${amount} to confirm and activate your rental.`,
       action: (
         <Link href={tenantPaymentPath(request.id)} className={buttonVariants({ className: "w-full sm:w-auto" })}>
           <CreditCard />
@@ -36,14 +37,7 @@ export function RequestStatusPanel({ request }: { request: RentalRequestDetails 
     },
     REJECTED: {
       title: "Request declined",
-      body: request.landlordNote ? (
-        <>
-          <span className="block">{landlordFirst} declined this request with the following note:</span>
-          <q className="mt-2 block italic">{request.landlordNote}</q>
-        </>
-      ) : (
-        `${landlordFirst} declined this request. Keep looking — there are plenty of other homes available.`
-      ),
+      body: `${landlord} declined this request. Keep looking — there are plenty of other homes available.`,
       action: (
         <Link href="/properties" className={buttonVariants({ variant: "outline", className: "w-full sm:w-auto" })}>
           <Search />
@@ -53,31 +47,11 @@ export function RequestStatusPanel({ request }: { request: RentalRequestDetails 
     },
     ACTIVE: {
       title: "Active rental",
-      body: "Your payment is complete and this is your current home. Share your experience to help other renters.",
-      action: request.review ? undefined : (
-        <LeaveReviewButton
-          rentalRequestId={request.id}
-          propertyId={request.property.id}
-          propertyTitle={request.property.title}
-          variant="primary"
-          size="md"
-          className="w-full sm:w-auto"
-        />
-      ),
+      body: "Your payment is complete and this is your current home.",
     },
     COMPLETED: {
       title: "Rental completed",
       body: "This rental has ended. It stays here as part of your rental history.",
-      action: request.review ? undefined : (
-        <LeaveReviewButton
-          rentalRequestId={request.id}
-          propertyId={request.property.id}
-          propertyTitle={request.property.title}
-          variant="outline"
-          size="md"
-          className="w-full sm:w-auto"
-        />
-      ),
     },
   };
 

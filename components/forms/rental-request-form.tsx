@@ -9,7 +9,10 @@ import { CircleAlert, CircleCheck, LoaderCircle, Send } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FieldHint, FormField, Input, Select, Textarea, fieldAria } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
-import { submitRentalRequest } from "@/lib/mock-api";
+import { browserApi } from "@/lib/api/browser";
+import { applyFieldErrors, toApiError } from "@/lib/api/errors";
+import { buildRentalMessage } from "@/lib/api/mappers";
+import { createRentalRequest } from "@/lib/api/services/rentals";
 import { formatPrice } from "@/lib/utils";
 
 const DURATIONS = ["3", "6", "12", "24"] as const;
@@ -45,10 +48,12 @@ type FormValues = z.infer<typeof schema>;
 interface RentalRequestFormProps {
   property: { id: string; title: string; price: number };
   landlordName: string;
+  /** Prefilled from the signed-in tenant. */
+  defaults?: { fullName: string; email: string };
   onCancel: () => void;
 }
 
-export function RentalRequestForm({ property, landlordName, onCancel }: RentalRequestFormProps) {
+export function RentalRequestForm({ property, landlordName, defaults, onCancel }: RentalRequestFormProps) {
   const toast = useToast();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState<FormValues | null>(null);
@@ -56,12 +61,20 @@ export function RentalRequestForm({ property, landlordName, onCancel }: RentalRe
   const {
     register,
     handleSubmit,
+    setError,
     control,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     mode: "onTouched",
-    defaultValues: { fullName: "", email: "", phone: "", moveInDate: "", durationMonths: "12", message: "" },
+    defaultValues: {
+      fullName: defaults?.fullName ?? "",
+      email: defaults?.email ?? "",
+      phone: "",
+      moveInDate: "",
+      durationMonths: "12",
+      message: "",
+    },
   });
 
   const messageLength = useWatch({ control, name: "message" })?.length ?? 0;
@@ -69,12 +82,19 @@ export function RentalRequestForm({ property, landlordName, onCancel }: RentalRe
   const onSubmit = async (values: FormValues) => {
     setSubmitError(null);
     try {
-      await submitRentalRequest({ ...values, propertyId: property.id, durationMonths: Number(values.durationMonths) });
+      // POST /api/rentals accepts only { propertyId, message }: the other fields are added to the message.
+      await createRentalRequest(browserApi, {
+        propertyId: property.id,
+        message: buildRentalMessage({ ...values, durationMonths: Number(values.durationMonths) }),
+      });
       setSubmitted(values);
       toast({ title: "Rental request sent", description: `${landlordName} will review your request soon.` });
-    } catch {
-      setSubmitError("We couldn't send your request right now. Please check your connection and try again.");
-      toast({ title: "Request not sent", description: "Something went wrong. Please try again.", variant: "error" });
+    } catch (err) {
+      const error = toApiError(err);
+      // 401 is handled by browserApi (redirects to login). 400 message errors go on the field;
+      // anything else (403 wrong role, 409 conflict, unavailable property, network) shows the message.
+      if (!applyFieldErrors(error, setError, { message: "message" }, ["message"])) setSubmitError(error.message);
+      toast({ title: "Request not sent", description: error.message, variant: "error" });
     }
   };
 

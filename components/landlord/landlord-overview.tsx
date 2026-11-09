@@ -1,30 +1,35 @@
-"use client";
-
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, Building2, CircleCheck, ClipboardList, Hourglass, Inbox, Plus, Wallet } from "lucide-react";
+import { ArrowRight, Building2, CircleCheck, ClipboardList, Hourglass, Inbox, MessageSquare, Plus, Star } from "lucide-react";
 import { StatCard } from "@/components/dashboard/stat-card";
+import { StarRating } from "@/components/properties/review-list";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { useLandlordProperties, useLandlordRequests } from "@/lib/mock-store";
-import { formatPrice, isOptimizableImage } from "@/lib/utils";
+import type { MappedProperty, MappedRentalRequest, MappedReview } from "@/lib/api/mappers";
+import { ratingSummary } from "@/lib/property-insights";
+import { formatDate, formatLocation, formatPrice } from "@/lib/utils";
 import { LandlordRequestTable } from "./landlord-request-table";
 
 interface LandlordOverviewProps {
-  landlordId: string;
   firstName: string;
-  /** Total of paid rent across the landlord's rentals (from GET /api/payments later). */
-  totalEarnings: number;
+  /** GET /api/landlord/properties */
+  properties: MappedProperty[];
+  /** GET /api/landlord/requests */
+  requests: MappedRentalRequest[];
+  /** GET /api/landlord/reviews; null if they couldn't be loaded. */
+  reviews: MappedReview[] | null;
 }
 
-export function LandlordOverview({ landlordId, firstName, totalEarnings }: LandlordOverviewProps) {
-  const properties = useLandlordProperties(landlordId);
-  const requests = useLandlordRequests(landlordId);
+/** Landlord dashboard. Every number is computed from the backend lists above. */
+export function LandlordOverview({ firstName, properties, requests, reviews }: LandlordOverviewProps) {
   const pending = requests.filter((r) => r.status === "PENDING");
   const available = properties.filter((p) => p.isAvailable).length;
   const requestCount = (propertyId: string) => requests.filter((r) => r.propertyId === propertyId).length;
+  const rating = ratingSummary(reviews ?? []);
+  const propertyTitle = (review: MappedReview) =>
+    review.propertyTitle ?? properties.find((p) => p.id === review.propertyId)?.title ?? "Your property";
 
   return (
     <div className="space-y-10">
@@ -67,9 +72,15 @@ export function LandlordOverview({ landlordId, firstName, totalEarnings }: Landl
 
       <section aria-label="Summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Total properties" value={properties.length} icon={Building2} />
-        <StatCard label="Available" value={available} icon={CircleCheck} tone="brand" hint="Accepting requests" />
+        <StatCard label="Available" value={available} icon={CircleCheck} tone="brand" hint="Shown in search" />
         <StatCard label="Pending requests" value={pending.length} icon={Hourglass} tone="amber" hint="Awaiting your decision" />
-        <StatCard label="Total earnings" value={formatPrice(totalEarnings)} icon={Wallet} tone="blue" hint="Rent received" />
+        <StatCard
+          label="Reviews"
+          value={reviews ? rating.count : "—"}
+          icon={Star}
+          tone="blue"
+          hint={!reviews ? "Couldn't load reviews" : rating.count > 0 ? `${rating.average.toFixed(1)} average rating` : "No reviews yet"}
+        />
       </section>
 
       <section aria-labelledby="recent-requests">
@@ -113,17 +124,16 @@ export function LandlordOverview({ landlordId, firstName, totalEarnings }: Landl
                 return (
                   <li key={p.id} className="flex flex-wrap items-center gap-x-4 gap-y-3 p-4">
                     <div className="relative size-14 shrink-0 overflow-hidden rounded-lg bg-stone-100">
-                      <Image src={p.images[0]} alt="" fill sizes="56px" unoptimized={!isOptimizableImage(p.images[0])} className="object-cover" />
+                      <Image src={p.images[0]} alt="" fill sizes="56px" className="object-cover" />
                     </div>
                     <div className="min-w-0 flex-1 basis-48">
                       <p className="line-clamp-1 font-medium text-stone-900">{p.title}</p>
                       <p className="text-sm text-stone-500">
-                        {p.location.area}, {p.location.city} · {formatPrice(p.price)}/mo
+                        {formatLocation({ ...p.location, address: "" })} · {formatPrice(p.price)}/mo
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge tone={p.isAvailable ? "brand" : "neutral"}>{p.isAvailable ? "Available" : "Unavailable"}</Badge>
-                      {p.status === "PENDING" && <Badge tone="amber">Pending review</Badge>}
                       <span className="text-sm text-stone-500">
                         {count} {count === 1 ? "request" : "requests"}
                       </span>
@@ -150,6 +160,40 @@ export function LandlordOverview({ landlordId, firstName, totalEarnings }: Landl
                   Add property
                 </Link>
               }
+            />
+          )}
+        </div>
+      </section>
+
+      <section aria-labelledby="recent-reviews">
+        <h2 id="recent-reviews" className="text-lg font-semibold">
+          Recent reviews
+        </h2>
+        <div className="mt-4">
+          {reviews === null ? (
+            <p role="alert" className="rounded-xl border border-stone-200 bg-white p-4 text-sm text-stone-600">
+              Reviews couldn&apos;t be loaded right now. Please refresh to try again.
+            </p>
+          ) : reviews.length > 0 ? (
+            <ul className="divide-y divide-stone-100 rounded-xl border border-stone-200 bg-white">
+              {reviews.slice(0, 5).map((r) => (
+                <li key={r.id} className="p-4">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <StarRating rating={r.rating} />
+                    <p className="font-medium text-stone-900">{propertyTitle(r)}</p>
+                    <span className="text-sm text-stone-500">
+                      {[r.tenantName, r.createdAt && formatDate(r.createdAt)].filter(Boolean).join(" · ")}
+                    </span>
+                  </div>
+                  {r.comment && <p className="mt-1.5 text-sm text-stone-700">{r.comment}</p>}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <EmptyState
+              icon={MessageSquare}
+              title="No reviews yet"
+              description="Tenants can review a property after their rental is completed."
             />
           )}
         </div>

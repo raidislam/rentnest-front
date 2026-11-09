@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
-import { CalendarCheck, CircleCheck, Clock, ShieldCheck } from "lucide-react";
+import { CalendarCheck, CircleCheck, Clock, LogIn, ShieldCheck } from "lucide-react";
 import { RentalRequestForm } from "@/components/forms/rental-request-form";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import type { Role } from "@/lib/types";
 import { formatPrice } from "@/lib/utils";
 
 interface BookingPanelProps {
@@ -15,16 +17,27 @@ interface BookingPanelProps {
   unavailableReason?: string;
   /** "card" = sidebar card, "bar" = sticky bottom bar for small screens. */
   variant?: "card" | "bar";
+  /** The signed-in user, or null. Only tenants can send rental requests (backend rule). */
+  viewer: { role: Role; name: string; email?: string } | null;
 }
 
-export function BookingPanel({ property, landlordName, unavailableReason, variant = "card" }: BookingPanelProps) {
+export function BookingPanel({ property, landlordName, unavailableReason, variant = "card", viewer }: BookingPanelProps) {
   const [open, setOpen] = useState(false);
-  const canRequest = !unavailableReason;
+  const isAvailable = !unavailableReason;
+  const needsLogin = isAvailable && !viewer;
+  const roleReason = isAvailable && viewer && viewer.role !== "TENANT" ? "Only tenant accounts can send rental requests." : undefined;
+  const canRequest = isAvailable && !needsLogin && !roleReason;
+  const loginHref = `/auth/login?next=${encodeURIComponent(`/properties/${property.id}`)}`;
 
-  const cta = (
+  const cta = needsLogin ? (
+    <Link href={loginHref} className={buttonVariants({ size: "lg", className: "w-full" })}>
+      <LogIn />
+      Log in to request
+    </Link>
+  ) : (
     <Button size="lg" className="w-full" onClick={() => setOpen(true)} disabled={!canRequest}>
       <CalendarCheck />
-      {canRequest ? "Request to rent" : "Not available"}
+      {isAvailable ? "Request to rent" : "Not available"}
     </Button>
   );
 
@@ -37,7 +50,14 @@ export function BookingPanel({ property, landlordName, unavailableReason, varian
       className="max-w-xl"
     >
       {/* Mounted only while open so each request starts fresh. */}
-      {open && <RentalRequestForm property={property} landlordName={landlordName} onCancel={() => setOpen(false)} />}
+      {open && viewer && (
+        <RentalRequestForm
+          property={property}
+          landlordName={landlordName}
+          defaults={{ fullName: viewer.name, email: viewer.email ?? "" }}
+          onCancel={() => setOpen(false)}
+        />
+      )}
     </Dialog>
   );
 
@@ -49,9 +69,15 @@ export function BookingPanel({ property, landlordName, unavailableReason, varian
             {formatPrice(property.price)}
             <span className="text-sm font-normal text-stone-500"> /month</span>
           </p>
-          <Button onClick={() => setOpen(true)} disabled={!canRequest}>
-            {canRequest ? "Request to rent" : "Not available"}
-          </Button>
+          {needsLogin ? (
+            <Link href={loginHref} className={buttonVariants()}>
+              Log in to request
+            </Link>
+          ) : (
+            <Button onClick={() => setOpen(true)} disabled={!canRequest}>
+              {isAvailable ? "Request to rent" : "Not available"}
+            </Button>
+          )}
         </div>
         {dialog}
       </div>
@@ -66,7 +92,7 @@ export function BookingPanel({ property, landlordName, unavailableReason, varian
             {formatPrice(property.price)}
             <span className="text-base font-normal text-stone-500"> /month</span>
           </p>
-          {canRequest ? (
+          {isAvailable ? (
             <Badge tone="brand">
               <CircleCheck />
               Available
@@ -80,8 +106,8 @@ export function BookingPanel({ property, landlordName, unavailableReason, varian
         </div>
 
         <div className="mt-5">{cta}</div>
-        {unavailableReason ? (
-          <p className="mt-3 text-center text-sm text-stone-600">{unavailableReason}</p>
+        {unavailableReason || roleReason ? (
+          <p className="mt-3 text-center text-sm text-stone-600">{unavailableReason ?? roleReason}</p>
         ) : (
           <p className="mt-3 text-center text-sm text-stone-500">Free to request · no payment until approved</p>
         )}

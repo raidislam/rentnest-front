@@ -3,13 +3,14 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { PropertyForm } from "@/components/landlord/property-form";
 import { PageHeader } from "@/components/shared/page-header";
-import { getCurrentUser } from "@/lib/mock-data";
+import { getCategories } from "@/lib/api/landlord";
 import { requireUser } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "Add property" };
 
 export default async function NewPropertyPage() {
   await requireUser("LANDLORD");
+  const categories = await getCategories();
   return (
     <div className="space-y-6">
       <Link
@@ -19,11 +20,8 @@ export default async function NewPropertyPage() {
         <ArrowLeft aria-hidden className="size-4" />
         My properties
       </Link>
-      <PageHeader
-        title="Add a property"
-        description="New listings are reviewed by the RentNest team before they appear in search."
-      />
-      <PropertyForm landlordId={getCurrentUser("LANDLORD").id} />
+      <PageHeader title="Add a property" description="Add the details renters need. Your listing appears in search once it's created." />
+      <PropertyForm categories={categories} />
     </div>
   );
 }

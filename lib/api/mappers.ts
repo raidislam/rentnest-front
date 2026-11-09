@@ -82,17 +82,31 @@ export type MappedReview = Pick<Review, "id" | "rating" | "comment" | "createdAt
 
 export type PropertyDetails = MappedProperty & { reviews: MappedReview[] };
 
-export type MappedPayment = Pick<Payment, "id" | "method" | "status" | "createdAt"> &
-  Partial<Pick<Payment, "rentalRequestId" | "amount" | "transactionId">> & {
+export type MappedPayment = Pick<Payment, "id" | "status"> &
+  Partial<Pick<Payment, "method" | "createdAt" | "rentalRequestId" | "amount" | "transactionId">> & {
+    /** When the payment was completed (set by the backend on confirmation). */
+    paidAt?: string;
+    /** Mapped only if the nested rental request has every field the UI needs. */
     rentalRequest?: MappedRentalRequest;
+    /** Title of the paid-for property, from whichever nested object includes it (unverified nesting). */
+    propertyTitle?: string;
   };
 
-export type MappedRentalRequest = Pick<RentalRequest, "id" | "propertyId" | "message" | "status" | "createdAt"> &
-  Partial<Pick<RentalRequest, "tenantId" | "landlordId" | "monthlyRent" | "moveInDate" | "durationMonths" | "landlordNote">> & {
+/**
+ * A rental request. Only `id` and `status` (documented) plus a property id are
+ * required; everything else is shown only when the backend includes it.
+ * moveInDate/durationMonths/landlordNote are never provided by the backend.
+ */
+export type MappedRentalRequest = Pick<RentalRequest, "id" | "propertyId" | "message" | "status"> &
+  Partial<
+    Pick<RentalRequest, "createdAt" | "tenantId" | "landlordId" | "monthlyRent" | "moveInDate" | "durationMonths" | "landlordNote">
+  > & {
     property?: MappedProperty;
     tenant?: MappedUser;
-    /** undefined = the endpoint didn't include payment info; null = no payment yet. */
-    payment?: MappedPayment | null;
+    /** Payment records included in the response (newest first when dates exist). */
+    payments: MappedPayment[];
+    /** False when the response had no payment information at all, so "no payment yet" can't be claimed. */
+    paymentsIncluded: boolean;
   };
 
 /* ------------------------------------------------------------------ */
@@ -249,33 +263,76 @@ export function toPaymentStatus(status: PaymentStatusDTO | undefined): PaymentSt
 export function toPayment(dto: PaymentDTO): MappedPayment {
   return {
     id: required(dto.id, "payment.id"),
-    // SSLCommerz is the only gateway the backend supports.
-    method: "SSLCOMMERZ",
+    // The gateway is the backend's `provider` (STRIPE | SSLCOMMERZ); omitted if not sent.
+    method: dto.provider === "STRIPE" || dto.provider === "SSLCOMMERZ" ? dto.provider : undefined,
+    paidAt: dto.paidAt ?? undefined,
     status: toPaymentStatus(dto.status),
-    createdAt: required(dto.createdAt, "payment.createdAt"),
+    createdAt: dto.createdAt,
     rentalRequestId: dto.rentalRequestId ?? dto.rentalRequest?.id,
     amount: dto.amount === undefined ? undefined : parseAmount(dto.amount, "payment.amount"),
     transactionId: dto.transactionId,
-    rentalRequest: dto.rentalRequest ? toRentalRequest(dto.rentalRequest) : undefined,
+    // Nested shapes are unverified: a partial rental request must not drop the whole payment.
+    rentalRequest: tryMap(dto.rentalRequest, toRentalRequest),
+    propertyTitle: dto.rentalRequest?.property?.title ?? dto.property?.title,
   };
 }
 
+/** Maps a nested object, or returns undefined if it's missing or lacks required fields. */
+function tryMap<T, R>(value: T | null | undefined, map: (value: T) => R): R | undefined {
+  if (value === null || value === undefined) return undefined;
+  try {
+    return map(value);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Maps each item, skipping (and logging) items that lack fields the UI needs,
+ * so one malformed record from an unverified endpoint doesn't break a whole page.
+ */
+export function mapList<T, R>(items: T[], map: (item: T) => R, label: string): R[] {
+  const result: R[] = [];
+  for (const item of items) {
+    try {
+      result.push(map(item));
+    } catch (error) {
+      console.warn(`[api] skipped a ${label} the UI can't display:`, error instanceof Error ? error.message : error);
+    }
+  }
+  return result;
+}
+
+
+const newestFirst = (a: { createdAt?: string }, b: { createdAt?: string }) =>
+  (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
+
 export function toRentalRequest(dto: RentalDTO): MappedRentalRequest {
-  const property = dto.property ? toProperty(dto.property) : undefined;
+  // A nested property lacking required fields is dropped; callers can fetch it separately.
+  const property = tryMap(dto.property, toProperty);
+  // "payment" may be an object, null or an array (unverified); "payments" is accepted too.
+  const rawPayments = [dto.payment, dto.payments].flat().filter((p): p is PaymentDTO => !!p && typeof p === "object");
   return {
     id: required(dto.id, "rental.id"),
     propertyId: required(dto.propertyId ?? dto.property?.id, "rental.propertyId"),
     message: dto.message ?? "",
     status: oneOf<RequestStatus>(dto.status, REQUEST_STATUSES, "rental.status"),
-    createdAt: required(dto.createdAt, "rental.createdAt"),
+    createdAt: dto.createdAt,
     tenantId: dto.tenantId ?? dto.tenant?.id,
     landlordId: property?.landlordId,
     // The backend keeps no rent snapshot; this is the property's current price.
     monthlyRent: property?.price,
     property,
     tenant: dto.tenant ? toUser(dto.tenant) : undefined,
-    payment: dto.payment === undefined ? undefined : dto.payment === null ? null : toPayment(dto.payment),
+    payments: mapList(rawPayments, toPayment, "payment").sort(newestFirst),
+    paymentsIncluded: "payment" in dto || "payments" in dto,
   };
+}
+
+/** Attaches a separately fetched property (e.g. from GET /api/properties/:id). */
+export function withProperty(rental: MappedRentalRequest, property: MappedProperty | undefined): MappedRentalRequest {
+  if (!property) return rental;
+  return { ...rental, property, landlordId: property.landlordId, monthlyRent: property.price };
 }
 
 /* ------------------------------------------------------------------ */

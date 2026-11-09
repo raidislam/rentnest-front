@@ -13,6 +13,7 @@ import { ReviewList } from "@/components/properties/review-list";
 import { Badge } from "@/components/ui/badge";
 import { toApiError } from "@/lib/api/errors";
 import { getPublicServerApi } from "@/lib/api/server";
+import { getOptionalUser } from "@/lib/auth/session";
 import { getProperty, listProperties } from "@/lib/api/services/properties";
 import { ratingSummary, similarProperties } from "@/lib/property-insights";
 import { formatDate, formatLocation, propertyTypeLabel } from "@/lib/utils";
@@ -49,7 +50,11 @@ export default async function PropertyDetailsPage({ params }: PageProps<"/proper
   const { id } = await params;
 
   // The public list feeds "similar homes" and the landlord's listing count (no dedicated endpoints).
-  const [property, available] = await Promise.all([loadProperty(id), listProperties(getPublicServerApi())]);
+  const [property, available, viewer] = await Promise.all([
+    loadProperty(id),
+    listProperties(getPublicServerApi()),
+    getOptionalUser(),
+  ]);
   if (!property) notFound();
 
   // The backend embeds only the landlord's id and name, and reviews without reviewer names.
@@ -71,6 +76,7 @@ export default async function PropertyDetailsPage({ params }: PageProps<"/proper
     property: { id: property.id, title: property.title, price: property.price },
     landlordName: landlord?.name ?? "the landlord",
     unavailableReason,
+    viewer: viewer && { role: viewer.role, name: viewer.name, email: viewer.email },
   };
 
   // Bedrooms, bathrooms and size are shown only when known (the backend doesn't provide them yet).

@@ -1,52 +1,60 @@
 "use client";
 
-import { startTransition, useOptimistic } from "react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useToast } from "@/components/ui/toast";
-import { MockApiError, updateRentalRequestStatus } from "@/lib/mock-api";
-import type { LandlordRequestView } from "@/lib/types";
+import { browserApi } from "@/lib/api/browser";
+import { toApiError } from "@/lib/api/errors";
+import type { MappedRentalRequest } from "@/lib/api/mappers";
+import { decideRentalRequest } from "@/lib/api/services/landlord";
 
-export type DecidableRequest = LandlordRequestView & { saving?: boolean };
+export type DecidableRequest = MappedRentalRequest & { saving?: boolean };
 type Decision = "APPROVED" | "REJECTED";
 
 /**
- * Optimistic approve/reject for landlord requests.
- *
- * The new status shows immediately (marked `saving` until the mock request
- * settles). On success the store holds the new status; on failure React
- * discards the optimistic value, so the request rolls back to PENDING.
- *
- * Demo: add `?simulateFailure=1` to the page URL to see the rollback path.
+ * Approve/reject landlord requests via PATCH /api/landlord/requests/:id with { status }.
+ * The new status is shown only after the backend confirms it (no optimistic update);
+ * on failure the request keeps its current status and the backend's message is shown.
  */
-export function useRequestDecisions(requests: LandlordRequestView[]) {
+export function useRequestDecisions(requests: MappedRentalRequest[]) {
+  const router = useRouter();
   const toast = useToast();
-  const [optimisticRequests, applyOptimistic] = useOptimistic(
-    requests as DecidableRequest[],
-    (state, update: { id: string; status: Decision }) =>
-      state.map((r) => (r.id === update.id ? { ...r, status: update.status, saving: true } : r)),
-  );
+  const [saving, setSaving] = useState<Set<string>>(new Set());
+  const [confirmed, setConfirmed] = useState<Record<string, Decision>>({});
 
-  const decide = (request: LandlordRequestView, status: Decision, note?: string) => {
-    const simulateFailure = new URLSearchParams(window.location.search).has("simulateFailure");
-    const firstName = request.tenant.name.split(" ")[0];
-
-    startTransition(async () => {
-      applyOptimistic({ id: request.id, status });
-      try {
-        await updateRentalRequestStatus(request.id, status, { note, simulateFailure });
-        toast(
-          status === "APPROVED"
-            ? { title: "Request approved", description: `${firstName} can now complete payment to confirm the rental.` }
-            : { title: "Request rejected", description: `${firstName}'s request has been declined.` },
-        );
-      } catch (err) {
-        toast({
-          title: status === "APPROVED" ? "Couldn't approve request" : "Couldn't reject request",
-          description: `${err instanceof MockApiError ? err.message : "Something went wrong."} The request is still pending.`,
-          variant: "error",
-        });
-      }
-    });
+  const decide = async (request: MappedRentalRequest, status: Decision) => {
+    const who = request.tenant?.name.split(" ")[0] ?? "The tenant";
+    setSaving((s) => new Set(s).add(request.id));
+    try {
+      await decideRentalRequest(browserApi, request.id, status);
+      setConfirmed((c) => ({ ...c, [request.id]: status }));
+      toast(
+        status === "APPROVED"
+          ? { title: "Request approved", description: `${who} can now complete payment to confirm the rental.` }
+          : { title: "Request rejected", description: "The request has been declined." },
+      );
+      router.refresh(); // reload server data (counts, other pages)
+    } catch (err) {
+      // 401 redirects to login (browserApi). 400/403/404/409/network: show the backend's message.
+      toast({
+        title: status === "APPROVED" ? "Couldn't approve request" : "Couldn't reject request",
+        description: toApiError(err).message,
+        variant: "error",
+      });
+    } finally {
+      setSaving((s) => {
+        const next = new Set(s);
+        next.delete(request.id);
+        return next;
+      });
+    }
   };
 
-  return { requests: optimisticRequests, decide };
+  const withState: DecidableRequest[] = requests.map((r) => ({
+    ...r,
+    status: confirmed[r.id] ?? r.status,
+    saving: saving.has(r.id),
+  }));
+
+  return { requests: withState, decide };
 }

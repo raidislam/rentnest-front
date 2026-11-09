@@ -2,64 +2,56 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { CreditCard, Landmark, LoaderCircle, Lock } from "lucide-react";
+import { useRef, useState } from "react";
+import { ExternalLink, Info, Landmark, LoaderCircle, Lock } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { useToast } from "@/components/ui/toast";
-import { submitMockPayment } from "@/lib/mock-api";
-import type { PaymentMethod } from "@/lib/types";
-import { cn, formatPrice } from "@/lib/utils";
-
-const METHODS: {
-  value: PaymentMethod;
-  name: string;
-  description: string;
-  options: string[];
-  icon: typeof Landmark;
-  recommended?: boolean;
-}[] = [
-  {
-    value: "SSLCOMMERZ",
-    name: "SSLCommerz",
-    description: "Mobile banking, local cards and internet banking.",
-    options: ["bKash", "Nagad", "Rocket", "Visa", "Mastercard", "Internet banking"],
-    icon: Landmark,
-    recommended: true,
-  },
-  {
-    value: "STRIPE",
-    name: "Stripe",
-    description: "International credit and debit cards.",
-    options: ["Visa", "Mastercard", "Amex"],
-    icon: CreditCard,
-  },
-];
+import { browserApi } from "@/lib/api/browser";
+import { toApiError } from "@/lib/api/errors";
+import { createPayment } from "@/lib/api/services/payments";
+import type { PaymentStatus } from "@/lib/types";
+import { isSslcommerzUrl } from "@/lib/payments";
+import { formatPrice } from "@/lib/utils";
+import { tenantRequestPath } from "./request-actions";
 
 interface PaymentFormProps {
   rentalRequestId: string;
-  amount: number;
+  /** Monthly rent shown on the button; the backend charges the property's price. */
+  amount?: number;
+  /** The previous attempt for this request, if the backend returned one. */
+  previousStatus?: PaymentStatus;
 }
 
-export function PaymentForm({ rentalRequestId, amount }: PaymentFormProps) {
+/**
+ * Starts an SSLCommerz checkout: POST /api/payments/create { rentalRequestId }, then redirects
+ * to the backend-provided paymentUrl. Creating the session is NOT a payment — the backend marks the
+ * payment COMPLETED only after SSLCommerz confirms it (validated server-side with val_id).
+ */
+export function PaymentForm({ rentalRequestId, amount, previousStatus }: PaymentFormProps) {
   const router = useRouter();
-  const toast = useToast();
-  const [method, setMethod] = useState<PaymentMethod>("SSLCOMMERZ");
-  const [status, setStatus] = useState<"idle" | "processing" | "redirecting">("idle");
+  const [status, setStatus] = useState<"idle" | "creating" | "redirecting">("idle");
   const [error, setError] = useState<string | null>(null);
-  const gateway = METHODS.find((m) => m.value === method)!.name;
+  const inFlight = useRef(false); // blocks double clicks before React re-renders
 
   const pay = async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setError(null);
-    setStatus("processing");
+    setStatus("creating");
     try {
-      const result = await submitMockPayment({ rentalRequestId, method });
+      const { paymentUrl } = await createPayment(browserApi, { rentalRequestId });
+      if (!isSslcommerzUrl(paymentUrl)) {
+        throw new Error("The payment gateway link from the server looks invalid. Please try again or contact support.");
+      }
       setStatus("redirecting");
-      toast({ title: "Payment successful", description: `${formatPrice(amount)} paid via ${gateway}.` });
-      const params = new URLSearchParams({ request: rentalRequestId, ref: result.transactionId, method });
-      router.push(`/payment/success?${params}`);
-    } catch {
+      window.location.assign(paymentUrl); // external: SSLCommerz checkout
+    } catch (err) {
+      inFlight.current = false;
       setStatus("idle");
-      setError("We couldn't start the payment. Please try again.");
+      const apiError = toApiError(err);
+      // A thrown Error (invalid gateway URL) has kind "unknown"; show its own message.
+      setError(apiError.kind === "unknown" && err instanceof Error ? err.message : apiError.message);
+      // 409 = already paid, 400 = no longer approved: reload so the page shows the real status.
+      if (apiError.status === 409 || apiError.status === 400) router.refresh();
     }
   };
 
@@ -67,67 +59,32 @@ export function PaymentForm({ rentalRequestId, amount }: PaymentFormProps) {
 
   return (
     <div className="space-y-6">
-      <fieldset disabled={busy}>
-        <legend className="font-semibold text-stone-900">Payment method</legend>
-        <div className="mt-3 space-y-3">
-          {METHODS.map(({ value, name, description, options, icon: Icon, recommended }) => (
-            <div key={value}>
-              <input
-                id={`method-${value}`}
-                type="radio"
-                name="method"
-                value={value}
-                checked={method === value}
-                onChange={() => setMethod(value)}
-                className="peer sr-only"
-              />
-              <label
-                htmlFor={`method-${value}`}
-                className={cn(
-                  "flex cursor-pointer gap-4 rounded-xl border border-stone-300 bg-white p-4 transition-colors hover:border-stone-400",
-                  "peer-checked:border-brand-600 peer-checked:ring-1 peer-checked:ring-brand-600",
-                  "peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-brand-600",
-                  "peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
-                )}
-              >
-                <span
-                  aria-hidden
-                  className={cn(
-                    "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-2",
-                    method === value ? "border-brand-700" : "border-stone-300",
-                  )}
-                >
-                  {method === value && <span className="size-2.5 rounded-full bg-brand-700" />}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex flex-wrap items-center gap-2">
-                    <Icon aria-hidden className="size-4 text-stone-500" />
-                    <span className="font-medium text-stone-900">{name}</span>
-                    {recommended && (
-                      <span className="rounded bg-brand-50 px-1.5 py-0.5 text-xs font-medium text-brand-800">
-                        Recommended in Bangladesh
-                      </span>
-                    )}
-                  </span>
-                  <span className="mt-1 block text-sm text-stone-600">{description}</span>
-                  <span className="mt-2.5 flex flex-wrap gap-1.5">
-                    {options.map((o) => (
-                      <span key={o} className="rounded-md border border-stone-200 bg-stone-50 px-2 py-0.5 text-xs text-stone-700">
-                        {o}
-                      </span>
-                    ))}
-                  </span>
-                </span>
-              </label>
-            </div>
-          ))}
+      <div className="flex gap-4 rounded-xl border border-brand-600 p-4 ring-1 ring-brand-600">
+        <Landmark aria-hidden className="mt-0.5 size-5 shrink-0 text-stone-500" />
+        <div>
+          <p className="font-medium text-stone-900">SSLCommerz</p>
+          <p className="mt-1 text-sm text-stone-600">Mobile banking, local cards and internet banking on SSLCommerz&apos;s secure page.</p>
         </div>
-      </fieldset>
+      </div>
+
+      {previousStatus === "FAILED" && (
+        <p className="flex items-start gap-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+          <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
+          Your previous payment attempt didn&apos;t go through. You can try again.
+        </p>
+      )}
+      {previousStatus === "PENDING" && (
+        <p className="flex items-start gap-2 rounded-lg bg-sky-50 p-3 text-sm text-sky-950">
+          <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
+          A payment attempt was started but not confirmed yet. If you already paid, check your request status before paying again.
+        </p>
+      )}
 
       <p className="flex items-start gap-2 text-sm text-stone-600">
         <Lock aria-hidden className="mt-0.5 size-4 shrink-0 text-stone-400" />
-        You&apos;ll complete payment on {gateway}&apos;s secure page. RentNest never sees or stores your card or mobile
-        banking details.
+        You&apos;ll complete payment on SSLCommerz. RentNest never sees your card or mobile banking details. Your rental
+        becomes active only after SSLCommerz confirms the payment to RentNest — check your request afterwards to see the
+        updated status.
       </p>
 
       {error && (
@@ -138,23 +95,19 @@ export function PaymentForm({ rentalRequestId, amount }: PaymentFormProps) {
 
       <div className="flex flex-col gap-3 sm:flex-row-reverse sm:justify-start">
         <Button size="lg" onClick={pay} disabled={busy} className="sm:min-w-56">
-          {busy ? <LoaderCircle className="animate-spin" /> : <Lock />}
-          {status === "processing"
-            ? "Processing payment…"
+          {busy ? <LoaderCircle className="animate-spin" /> : <ExternalLink />}
+          {status === "creating"
+            ? "Starting secure checkout…"
             : status === "redirecting"
-              ? "Redirecting…"
-              : `Pay ${formatPrice(amount)}`}
+              ? "Redirecting to SSLCommerz…"
+              : `Pay${amount !== undefined ? ` ${formatPrice(amount)}` : ""} with SSLCommerz`}
         </Button>
         <Link
-          href={`/payment/cancel?request=${rentalRequestId}`}
+          href={tenantRequestPath(rentalRequestId)}
           aria-disabled={busy}
-          className={buttonVariants({
-            variant: "ghost",
-            size: "lg",
-            className: cn("text-stone-600", busy && "pointer-events-none opacity-50"),
-          })}
+          className={buttonVariants({ variant: "ghost", size: "lg", className: busy ? "pointer-events-none text-stone-600 opacity-50" : "text-stone-600" })}
         >
-          Cancel payment
+          Back to request
         </Link>
       </div>
     </div>

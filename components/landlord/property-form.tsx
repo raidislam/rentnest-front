@@ -11,17 +11,17 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { FieldError, FormField, Input, Select, Textarea, fieldAria } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
-import { AMENITIES, PROPERTY_TYPES } from "@/lib/constants";
-import { MockApiError, createProperty, updateProperty } from "@/lib/mock-api";
-import type { Amenity, Property, PropertyInput, PropertyType } from "@/lib/types";
-import { ImageUrlManager } from "./image-url-manager";
+import { browserApi } from "@/lib/api/browser";
+import type { UpdatePropertyBody } from "@/lib/api/dto";
+import { applyFieldErrors, toApiError } from "@/lib/api/errors";
+import { joinLocation, toPropertyBody, type MappedCategory, type MappedProperty } from "@/lib/api/mappers";
+import { createProperty, updateProperty } from "@/lib/api/services/landlord";
+import { AMENITIES } from "@/lib/constants";
 
-const TYPE_VALUES = PROPERTY_TYPES.map((t) => t.value) as [PropertyType, ...PropertyType[]];
-const AMENITY_VALUES = AMENITIES as [Amenity, ...Amenity[]];
 const CITY_SUGGESTIONS = ["Dhaka", "Chattogram", "Sylhet", "Khulna", "Rajshahi"];
 
-const wholeNumber = (missing: string) => z.number({ error: missing }).int("Use a whole number.");
-
+// Only fields the backend supports: title, description, location, price, propertyType, amenities, categoryId
+// (+ availability on update). There are no photo, bedroom, bathroom or size fields.
 const schema = z.object({
   title: z.string().trim().min(10, "Use a descriptive title of at least 10 characters.").max(100, "Keep the title under 100 characters."),
   description: z
@@ -29,100 +29,137 @@ const schema = z.object({
     .trim()
     .min(40, "Describe the property in at least 40 characters.")
     .max(2000, "Keep the description under 2,000 characters."),
-  type: z.enum(TYPE_VALUES, { error: "Choose a property type." }),
+  categoryId: z.string().min(1, "Choose a property type."),
   area: z.string().trim().min(2, "Enter the area or neighbourhood."),
   city: z.string().trim().min(2, "Enter the city."),
-  address: z.string().trim().min(3, "Enter the street address."),
-  price: wholeNumber("Enter the monthly rent.").positive("Rent must be more than ৳0.").max(10_000_000, "That rent looks too high."),
-  bedrooms: wholeNumber("Enter the number of bedrooms.").min(0, "Bedrooms can't be negative.").max(20, "Enter 20 or fewer bedrooms."),
-  bathrooms: wholeNumber("Enter the number of bathrooms.").min(1, "Enter at least 1 bathroom.").max(20, "Enter 20 or fewer bathrooms."),
-  areaSqft: wholeNumber("Enter the size in square feet.").positive("Size must be more than 0.").max(100_000, "That size looks too large."),
-  amenities: z.array(z.enum(AMENITY_VALUES)).min(1, "Select at least one amenity."),
-  images: z.array(z.url()).min(1, "Add at least one photo.").max(10, "Add up to 10 photos."),
+  address: z.string().trim(),
+  price: z.number({ error: "Enter the monthly rent." }).positive("Rent must be more than ৳0.").max(10_000_000, "That rent looks too high."),
+  amenities: z.array(z.string()).min(1, "Select at least one amenity."),
   isAvailable: z.boolean(),
 });
 
 type FormValues = z.infer<typeof schema>;
+type FieldName = keyof FormValues;
 
-// Property.type and amenities are free text from the backend; keep only values this form offers.
-const isPropertyType = (value: string): value is PropertyType => (TYPE_VALUES as string[]).includes(value);
-const isAmenity = (value: string): value is Amenity => (AMENITY_VALUES as string[]).includes(value);
+/** Backend field -> form field, for showing backend validation errors on the right input. */
+const BACKEND_FIELD_MAP: Partial<Record<string, FieldName>> = {
+  propertyType: "categoryId",
+  location: "area",
+  availability: "isAvailable",
+};
+const FORM_FIELDS: FieldName[] = ["title", "description", "categoryId", "area", "city", "address", "price", "amenities", "isAvailable"];
 
-function toDefaults(property?: Property): Partial<FormValues> {
-  if (!property) return { title: "", description: "", area: "", city: "", address: "", amenities: [], images: [], isAvailable: true };
+function toDefaults(property: MappedProperty | undefined, categories: MappedCategory[]): Partial<FormValues> {
+  if (!property) return { title: "", description: "", categoryId: "", area: "", city: "", address: "", amenities: [], isAvailable: true };
+  // Use the property's categoryId; fall back to matching the category name with propertyType.
+  const categoryId =
+    (property.categoryId && categories.some((c) => c.id === property.categoryId) && property.categoryId) ||
+    categories.find((c) => c.name.toUpperCase() === property.type.toUpperCase())?.id ||
+    "";
   return {
     title: property.title,
     description: property.description,
-    type: isPropertyType(property.type) ? property.type : undefined,
+    categoryId,
     area: property.location.area,
     city: property.location.city,
     address: property.location.address,
     price: property.price,
-    bedrooms: property.bedrooms,
-    bathrooms: property.bathrooms,
-    areaSqft: property.areaSqft,
-    amenities: property.amenities.filter(isAmenity),
-    images: property.images,
+    amenities: property.amenities,
     isAvailable: property.isAvailable,
   };
 }
 
-interface PropertyFormProps {
-  landlordId: string;
-  /** Present when editing. */
-  property?: Property;
+const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
+
+/** PUT body with only the fields that changed (the backend documents every PUT field as optional). */
+function changedFields(values: FormValues, original: Partial<FormValues>, category: MappedCategory | undefined): UpdatePropertyBody {
+  const body: UpdatePropertyBody = {};
+  if (values.title.trim() !== original.title) body.title = values.title.trim();
+  if (values.description.trim() !== original.description) body.description = values.description.trim();
+  const location = joinLocation({ address: values.address, area: values.area, city: values.city });
+  const originalLocation = joinLocation({ address: original.address ?? "", area: original.area ?? "", city: original.city ?? "" });
+  if (location !== originalLocation) body.location = location;
+  if (values.price !== original.price) body.price = values.price;
+  if (!sameSet(values.amenities, original.amenities ?? [])) body.amenities = values.amenities;
+  if (values.categoryId !== original.categoryId && category) {
+    body.categoryId = category.id;
+    body.propertyType = category.name;
+  }
+  if (values.isAvailable !== original.isAvailable) body.availability = values.isAvailable;
+  return body;
 }
 
-export function PropertyForm({ landlordId, property }: PropertyFormProps) {
+interface PropertyFormProps {
+  /** From GET /api/categories. */
+  categories: MappedCategory[];
+  /** Present when editing. */
+  property?: MappedProperty;
+}
+
+export function PropertyForm({ categories, property }: PropertyFormProps) {
   const router = useRouter();
   const toast = useToast();
   const isEdit = !!property;
   const [serverError, setServerError] = useState<string | null>(null);
   const [redirecting, setRedirecting] = useState(false);
+  const [defaults] = useState(() => toDefaults(property, categories));
+  // Keep amenities the backend already stores (free text) selectable, so editing never drops them.
+  const amenityOptions = [...AMENITIES, ...(property?.amenities ?? []).filter((a) => !(AMENITIES as readonly string[]).includes(a))];
 
   const {
     register,
     control,
     handleSubmit,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     mode: "onTouched",
-    defaultValues: toDefaults(property),
+    defaultValues: defaults,
   });
 
   const onSubmit = async (values: FormValues) => {
     setServerError(null);
-    const input: PropertyInput = {
-      title: values.title,
-      description: values.description,
-      type: values.type,
-      location: { area: values.area, city: values.city, address: values.address },
-      price: values.price,
-      bedrooms: values.bedrooms,
-      bathrooms: values.bathrooms,
-      areaSqft: values.areaSqft,
-      amenities: values.amenities,
-      images: values.images,
-      isAvailable: values.isAvailable,
-    };
+    const category = categories.find((c) => c.id === values.categoryId);
     try {
       if (property) {
-        await updateProperty(property.id, input);
+        const body = changedFields(values, defaults, category);
+        if (Object.keys(body).length === 0) {
+          toast({ title: "No changes to save" });
+          return;
+        }
+        await updateProperty(browserApi, property.id, body); // PUT /api/landlord/properties/:id
         toast({ title: "Changes saved", description: `“${values.title}” has been updated.` });
       } else {
-        await createProperty(landlordId, input);
-        toast({ title: "Property created", description: "It will be visible to renters once our team approves it." });
+        if (!category) {
+          setError("categoryId", { type: "manual", message: "Choose a property type." });
+          return;
+        }
+        // POST /api/landlord/properties with exactly the documented fields.
+        await createProperty(
+          browserApi,
+          toPropertyBody({
+            title: values.title,
+            description: values.description,
+            location: { address: values.address, area: values.area, city: values.city },
+            price: values.price,
+            amenities: values.amenities,
+            category: { id: category.id, name: category.name },
+          }),
+        );
+        toast({ title: "Property created", description: `“${values.title}” is now listed.` });
       }
       setRedirecting(true);
       router.push("/dashboard/landlord/properties");
+      router.refresh();
     } catch (err) {
-      setServerError(err instanceof MockApiError ? err.message : "Something went wrong. Please try again.");
+      // 401 is handled by browserApi. 400 field errors go on their inputs; 403/404/409/network show the message.
+      const error = toApiError(err);
+      if (!applyFieldErrors(error, setError, BACKEND_FIELD_MAP, FORM_FIELDS)) setServerError(error.message);
     }
   };
 
   const busy = isSubmitting || redirecting;
-  const numberField = { valueAsNumber: true } as const;
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-6">
@@ -137,12 +174,12 @@ export function PropertyForm({ landlordId, property }: PropertyFormProps) {
         <FormField id="title" label="Property title" error={errors.title?.message}>
           <Input id="title" placeholder="e.g. Sunlit 3-bed apartment near Gulshan Lake" {...fieldAria("title", errors.title)} {...register("title")} />
         </FormField>
-        <FormField id="type" label="Property type" error={errors.type?.message}>
-          <Select id="type" {...fieldAria("type", errors.type)} {...register("type")}>
+        <FormField id="categoryId" label="Property type" error={errors.categoryId?.message}>
+          <Select id="categoryId" {...fieldAria("categoryId", errors.categoryId)} {...register("categoryId")}>
             <option value="">Select a type</option>
-            {PROPERTY_TYPES.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
               </option>
             ))}
           </Select>
@@ -158,7 +195,7 @@ export function PropertyForm({ landlordId, property }: PropertyFormProps) {
         </FormField>
       </Section>
 
-      <Section title="Location">
+      <Section title="Location" description="Saved as one address line, e.g. “Road 9A, Dhanmondi, Dhaka”.">
         <div className="grid gap-5 sm:grid-cols-2">
           <FormField id="area" label="Area / neighbourhood" error={errors.area?.message}>
             <Input id="area" placeholder="e.g. Dhanmondi" {...fieldAria("area", errors.area)} {...register("area")} />
@@ -171,49 +208,38 @@ export function PropertyForm({ landlordId, property }: PropertyFormProps) {
               ))}
             </datalist>
           </FormField>
-          <FormField id="address" label="Street address" error={errors.address?.message} className="sm:col-span-2">
+          <FormField id="address" label="Street address (optional)" error={errors.address?.message} className="sm:col-span-2">
             <Input id="address" placeholder="e.g. Road 9A, House 12" {...fieldAria("address", errors.address)} {...register("address")} />
           </FormField>
         </div>
       </Section>
 
-      <Section title="Rent & size">
-        <div className="grid gap-5 sm:grid-cols-2">
-          <FormField id="price" label="Monthly rent (৳)" error={errors.price?.message} className="sm:col-span-2">
-            <div className="relative sm:max-w-xs">
-              <span aria-hidden className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-stone-500">
-                ৳
-              </span>
-              <Input
-                id="price"
-                type="number"
-                inputMode="numeric"
-                min={0}
-                step={500}
-                placeholder="45000"
-                className="pl-7"
-                {...fieldAria("price", errors.price)}
-                {...register("price", numberField)}
-              />
-            </div>
-          </FormField>
-          <FormField id="bedrooms" label="Bedrooms" error={errors.bedrooms?.message}>
-            <Input id="bedrooms" type="number" inputMode="numeric" min={0} max={20} {...fieldAria("bedrooms", errors.bedrooms)} {...register("bedrooms", numberField)} />
-          </FormField>
-          <FormField id="bathrooms" label="Bathrooms" error={errors.bathrooms?.message}>
-            <Input id="bathrooms" type="number" inputMode="numeric" min={1} max={20} {...fieldAria("bathrooms", errors.bathrooms)} {...register("bathrooms", numberField)} />
-          </FormField>
-          <FormField id="areaSqft" label="Size (sqft)" error={errors.areaSqft?.message}>
-            <Input id="areaSqft" type="number" inputMode="numeric" min={1} placeholder="1200" {...fieldAria("areaSqft", errors.areaSqft)} {...register("areaSqft", numberField)} />
-          </FormField>
-        </div>
+      <Section title="Rent">
+        <FormField id="price" label="Monthly rent (৳)" error={errors.price?.message}>
+          <div className="relative sm:max-w-xs">
+            <span aria-hidden className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-stone-500">
+              ৳
+            </span>
+            <Input
+              id="price"
+              type="number"
+              inputMode="numeric"
+              min={0}
+              step={500}
+              placeholder="45000"
+              className="pl-7"
+              {...fieldAria("price", errors.price)}
+              {...register("price", { valueAsNumber: true })}
+            />
+          </div>
+        </FormField>
       </Section>
 
       <Section title="Amenities" description="Select everything the property offers.">
         <fieldset aria-describedby={errors.amenities ? "amenities-error" : undefined}>
           <legend className="sr-only">Amenities</legend>
           <div className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
-            {AMENITIES.map((amenity) => {
+            {amenityOptions.map((amenity) => {
               const id = `amenity-${amenity.replace(/\W+/g, "-")}`;
               return (
                 <div key={amenity} className="flex items-center gap-2.5">
@@ -229,43 +255,30 @@ export function PropertyForm({ landlordId, property }: PropertyFormProps) {
         <FieldError id="amenities-error">{errors.amenities?.message}</FieldError>
       </Section>
 
-      <Section title="Photos" description="Add up to 10 photos. Bright, wide shots of each room work best.">
-        <Controller
-          control={control}
-          name="images"
-          render={({ field }) => (
-            <ImageUrlManager
-              value={field.value ?? []}
-              onChange={field.onChange}
-              invalid={!!errors.images}
-              describedBy={errors.images ? "images-error" : undefined}
-            />
-          )}
-        />
-        <FieldError id="images-error">{errors.images?.message ?? errors.images?.root?.message}</FieldError>
-      </Section>
-
-      <Section title="Availability">
-        <Controller
-          control={control}
-          name="isAvailable"
-          render={({ field }) => (
-            <div className="flex items-start gap-3">
-              <Switch id="isAvailable" checked={field.value} onCheckedChange={field.onChange} aria-labelledby="isAvailable-label" aria-describedby="isAvailable-hint" />
-              <div>
-                <p id="isAvailable-label" className="text-sm font-medium text-stone-900">
-                  {field.value ? "Available for rent" : "Not available"}
-                </p>
-                <p id="isAvailable-hint" className="text-sm text-stone-500">
-                  {field.value
-                    ? "Renters can send you rental requests for this property."
-                    : "The listing stays visible but renters can't send new requests."}
-                </p>
+      {/* Availability isn't part of the create request; it can be changed after the property exists. */}
+      {isEdit && (
+        <Section title="Availability">
+          <Controller
+            control={control}
+            name="isAvailable"
+            render={({ field }) => (
+              <div className="flex items-start gap-3">
+                <Switch id="isAvailable" checked={field.value} onCheckedChange={field.onChange} aria-labelledby="isAvailable-label" aria-describedby="isAvailable-hint" />
+                <div>
+                  <p id="isAvailable-label" className="text-sm font-medium text-stone-900">
+                    {field.value ? "Available for rent" : "Not available"}
+                  </p>
+                  <p id="isAvailable-hint" className="text-sm text-stone-500">
+                    {field.value
+                      ? "Shown in public search; renters can send rental requests."
+                      : "Hidden from public search; renters can't send new requests."}
+                  </p>
+                </div>
               </div>
-            </div>
-          )}
-        />
-      </Section>
+            )}
+          />
+        </Section>
+      )}
 
       <div className="sticky bottom-0 z-10 -mx-4 flex flex-col-reverse gap-3 border-t border-stone-200 bg-stone-50/95 px-4 py-4 backdrop-blur sm:-mx-6 sm:flex-row sm:justify-end sm:px-6 lg:mx-0 lg:rounded-xl lg:border lg:px-5">
         <Link

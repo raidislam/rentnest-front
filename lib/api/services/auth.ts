@@ -4,7 +4,7 @@
 
 import type { AxiosInstance } from "axios";
 import type { LoginBody, LoginResultDTO, RegisterBody, UpdateProfileBody, UserDTO } from "../dto";
-import { unwrap } from "../http";
+import { unwrap, unwrapVoid } from "../http";
 import { toSessionUser, type SessionUser } from "../mappers";
 
 /** POST /api/auth/login (no auth). Banned users get 403. */
@@ -15,7 +15,7 @@ export async function login(api: AxiosInstance, body: LoginBody): Promise<LoginR
 
 /** POST /api/auth/register (no auth). Role must be TENANT or LANDLORD. The response body is not used (unverified). */
 export async function register(api: AxiosInstance, body: RegisterBody): Promise<void> {
-  await unwrap<unknown>(api.post("/auth/register", body));
+  await unwrapVoid(api.post("/auth/register", body));
 }
 
 /** GET /api/auth/me (Bearer, any role). */
