@@ -13,6 +13,9 @@ import type { MappedPayment, MappedRentalRequest } from "./mappers";
 import { getServerApi } from "./server";
 import { confirmPayment, getPayment, listMyPayments } from "./services/payments";
 import { attachMissingProperties, getRentalRequest, listMyRentalRequests } from "./services/rentals";
+import { getProperty } from "./services/properties";
+import { getCurrentUser } from "@/lib/auth/session";
+import type { AxiosInstance } from "axios";
 
 function handleAuthError(error: unknown): never {
   unstable_rethrow(error);
@@ -23,11 +26,31 @@ function handleAuthError(error: unknown): never {
 
 const byNewest = (a: { createdAt?: string }, b: { createdAt?: string }) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
 
+/**
+ * For COMPLETED rentals (the only ones the backend lets tenants review), checks the property's
+ * public reviews (GET /api/properties/:id) for this tenant's id. Unknown stays undefined.
+ */
+async function markReviewed(api: AxiosInstance, rentals: MappedRentalRequest[]): Promise<MappedRentalRequest[]> {
+  const completed = [...new Set(rentals.filter((r) => r.status === "COMPLETED").map((r) => r.propertyId))];
+  if (completed.length === 0) return rentals;
+  const user = await getCurrentUser();
+  if (!user) return rentals;
+  const reviewedBy = new Map(
+    await Promise.all(
+      completed.map(async (id) => {
+        const property = await getProperty(api, id).catch(() => null);
+        return [id, property ? property.reviews.some((r) => r.tenantId === user.id) : undefined] as const;
+      }),
+    ),
+  );
+  return rentals.map((r) => (r.status === "COMPLETED" ? { ...r, reviewed: reviewedBy.get(r.propertyId) } : r));
+}
+
 /** GET /api/rentals, newest first, with properties filled in where the response omitted them. */
 export async function getMyRentals(): Promise<MappedRentalRequest[]> {
   try {
     const api = await getServerApi();
-    return (await attachMissingProperties(api, await listMyRentalRequests(api))).sort(byNewest);
+    return (await markReviewed(api, await attachMissingProperties(api, await listMyRentalRequests(api)))).sort(byNewest);
   } catch (error) {
     handleAuthError(error);
   }
@@ -37,7 +60,7 @@ export async function getMyRentals(): Promise<MappedRentalRequest[]> {
 export async function getMyRental(id: string): Promise<MappedRentalRequest | null> {
   try {
     const api = await getServerApi();
-    const [rental] = await attachMissingProperties(api, [await getRentalRequest(api, id)]);
+    const [rental] = await markReviewed(api, await attachMissingProperties(api, [await getRentalRequest(api, id)]));
     return rental;
   } catch (error) {
     unstable_rethrow(error);

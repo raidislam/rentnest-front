@@ -1,24 +1,23 @@
 import type { Metadata } from "next";
-import { PropertyModeration, type PropertyFilter } from "@/components/admin/property-moderation";
+import { AdminPropertyList, type AvailabilityFilter } from "@/components/admin/property-moderation";
 import { PageHeader } from "@/components/shared/page-header";
+import { getAdminProperties } from "@/lib/api/admin";
 import { requireUser } from "@/lib/auth/session";
 
-export const metadata: Metadata = { title: "Property moderation" };
+export const metadata: Metadata = { title: "Properties" };
 
-const FILTERS: PropertyFilter[] = ["PENDING", "APPROVED", "REJECTED"];
+const FILTERS: AvailabilityFilter[] = ["AVAILABLE", "UNAVAILABLE"];
 
 export default async function AdminPropertiesPage({ searchParams }: PageProps<"/dashboard/admin/properties">) {
   await requireUser("ADMIN");
-  const { status } = await searchParams;
-  const initialFilter = FILTERS.includes(status as PropertyFilter) ? (status as PropertyFilter) : "ALL";
+  const { availability } = await searchParams;
+  const initialFilter = FILTERS.includes(availability as AvailabilityFilter) ? (availability as AvailabilityFilter) : "ALL";
+  const properties = await getAdminProperties();
 
   return (
     <div className="space-y-8">
-      <PageHeader
-        title="Properties"
-        description="Review new listings before they appear in search, and inspect existing ones."
-      />
-      <PropertyModeration initialFilter={initialFilter} />
+      <PageHeader title="Properties" description="Every listing on RentNest, including unavailable ones. Landlords manage their own listings." />
+      <AdminPropertyList properties={properties} initialFilter={initialFilter} />
     </div>
   );
 }

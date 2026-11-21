@@ -1,7 +1,7 @@
 // Shared Axios setup. Safe to import from Server and Client Components: it
 // reads no environment variables and no cookies — callers pass the base URL
 // and (optionally) the token. See lib/api/server.ts for the server-side
-// clients. The browser client is added with the same-origin pass-through in Step 04.
+// clients and lib/api/browser.ts for the browser client (same-origin pass-through).
 
 import axios, { type AxiosInstance, type AxiosResponse } from "axios";
 import type { ApiEnvelopeDTO } from "./dto";

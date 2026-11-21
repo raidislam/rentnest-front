@@ -1,6 +1,6 @@
-// Domain types shared across the UI.
-// Shapes mirror the planned backend responses so mock data can later be
-// swapped for API calls without touching components.
+// Domain types shared across the UI. Backend responses are converted into these
+// (or the derived Mapped* types) by lib/api/mappers.ts; fields the backend doesn't
+// provide are optional and rendered only when present.
 
 export type Role = "TENANT" | "LANDLORD" | "ADMIN";
 
@@ -121,53 +121,3 @@ export interface Category {
   label: string;
 }
 
-export interface AdminStats {
-  totalUsers: number;
-  totalProperties: number;
-  pendingProperties: number;
-  pendingRequests: number;
-}
-
-/** A rental request joined with the records the dashboards display alongside it. */
-export interface RentalRequestDetails extends RentalRequest {
-  property: Property;
-  landlord: User;
-  tenant: User;
-  /** Payment attempts for this request, newest first. */
-  payments: Payment[];
-  /** The tenant's review of this property, if they have left one. */
-  review?: Review;
-}
-
-/** A request as the landlord sees it. `property` is missing if the listing was deleted. */
-export interface LandlordRequestView extends RentalRequest {
-  property?: Property;
-  tenant: User;
-  payments: Payment[];
-}
-
-/** Fields a landlord controls when creating or editing a listing. */
-export type PropertyInput = Pick<
-  Property,
-  | "title"
-  | "description"
-  | "location"
-  | "price"
-  | "type"
-  | "bedrooms"
-  | "bathrooms"
-  | "areaSqft"
-  | "amenities"
-  | "images"
-  | "isAvailable"
->;
-
-/** A request as an admin sees it: everyone involved, plus payments. */
-export interface AdminRequestView extends LandlordRequestView {
-  landlord: User;
-}
-
-/** A property joined with its landlord, for moderation. */
-export interface AdminPropertyView extends Property {
-  landlord?: User;
-}

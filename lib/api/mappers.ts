@@ -107,6 +107,13 @@ export type MappedRentalRequest = Pick<RentalRequest, "id" | "propertyId" | "mes
     payments: MappedPayment[];
     /** False when the response had no payment information at all, so "no payment yet" can't be claimed. */
     paymentsIncluded: boolean;
+    /** Title from the embedded property, even when it's partial (admin rentals embed only id/title/location/price). */
+    propertyTitle?: string;
+    /**
+     * Frontend-derived: true if the property's public reviews include this tenant's review,
+     * false if they don't, undefined if it couldn't be checked (the backend still rejects duplicates with 409).
+     */
+    reviewed?: boolean;
   };
 
 /* ------------------------------------------------------------------ */
@@ -320,10 +327,11 @@ export function toRentalRequest(dto: RentalDTO): MappedRentalRequest {
     createdAt: dto.createdAt,
     tenantId: dto.tenantId ?? dto.tenant?.id,
     landlordId: property?.landlordId,
-    // The backend keeps no rent snapshot; this is the property's current price.
-    monthlyRent: property?.price,
+    // The backend keeps no rent snapshot; this is the property's current price (also read from a partial property).
+    monthlyRent: property?.price ?? tryMap(dto.property?.price, (price) => parseAmount(price, "property.price")),
     property,
-    tenant: dto.tenant ? toUser(dto.tenant) : undefined,
+    propertyTitle: property?.title ?? dto.property?.title,
+    tenant: tryMap(dto.tenant, toUser),
     payments: mapList(rawPayments, toPayment, "payment").sort(newestFirst),
     paymentsIncluded: "payment" in dto || "payments" in dto,
   };

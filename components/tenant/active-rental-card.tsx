@@ -6,6 +6,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { buttonVariants } from "@/components/ui/button";
 import type { MappedRentalRequest } from "@/lib/api/mappers";
 import { formatLocation, formatPrice } from "@/lib/utils";
+import { CompleteRentalButton } from "./complete-rental-button";
 import { tenantRequestPath } from "./request-actions";
 
 /** The tenant's current (ACTIVE) rental. Shows only details the backend provides. */
@@ -62,6 +63,7 @@ export function ActiveRentalCard({ rental }: { rental: MappedRentalRequest }) {
               View property
             </Link>
           )}
+          <CompleteRentalButton rentalRequestId={rental.id} propertyTitle={property?.title} size="sm" />
         </div>
       </div>
     </article>

@@ -1,6 +1,6 @@
 // Placeholder property photos, used until the backend supports image upload
-// (planned: Cloudinary). These are generic interior/building shots already used
-// by the mock data, hosted on images.unsplash.com (allowed in next.config.ts).
+// (planned: Cloudinary). Generic interior/building shots hosted on
+// images.unsplash.com (allowed in next.config.ts).
 
 const PLACEHOLDER_PHOTO_IDS = [
   "1502672260266-1c1ef2d93688",

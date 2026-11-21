@@ -1,6 +1,6 @@
 // Server-only session access (the Data Access Layer for auth).
 //
-// The JWT lives in an HttpOnly cookie set by the login Route Handler (Step 03),
+// The JWT lives in an HttpOnly cookie set by the login/register Route Handlers,
 // so only server code can read it. Client Components receive the user as props
 // from a Server Component parent instead of importing this file.
 //

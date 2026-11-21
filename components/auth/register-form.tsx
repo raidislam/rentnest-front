@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -54,7 +53,6 @@ type FormValues = z.infer<typeof schema>;
 const FORM_FIELDS = ["name", "email", "password", "role"] as const;
 
 export function RegisterForm({ defaultRole }: { defaultRole: FormValues["role"] }) {
-  const router = useRouter();
   const toast = useToast();
   const [serverError, setServerError] = useState<{ message: string; emailTaken: boolean } | null>(null);
   const [account, setAccount] = useState<{ name: string; role: FormValues["role"]; loggedIn: boolean } | null>(null);
@@ -80,8 +78,6 @@ export function RegisterForm({ defaultRole }: { defaultRole: FormValues["role"] 
       const { user } = await registerRequest({ name, email, password, role });
       setAccount({ name, role, loggedIn: user !== null });
       toast({ title: "Account created", description: "Welcome to RentNest!" });
-      // Re-render server components (e.g. the navbar) with the new session.
-      if (user) router.refresh();
     } catch (err) {
       const error = toApiError(err);
       if (!applyFieldErrors(error, setError, {}, FORM_FIELDS)) {

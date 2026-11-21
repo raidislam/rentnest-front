@@ -1,9 +1,9 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Ban, LoaderCircle, RotateCcw, SearchX, Users } from "lucide-react";
 import { Pagination } from "@/components/dashboard/pagination";
-import { shouldSimulateFailure, useOptimisticPatch, type WithSaving } from "@/components/dashboard/use-optimistic-patch";
 import { Avatar } from "@/components/shared/avatar";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -13,47 +13,70 @@ import { SearchInput } from "@/components/shared/search-input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
-import { MockApiError, updateUserStatus } from "@/lib/mock-api";
-import { useAdminUsers } from "@/lib/mock-store";
-import type { Role, User } from "@/lib/types";
+import { browserApi } from "@/lib/api/browser";
+import { toApiError } from "@/lib/api/errors";
+import type { MappedUser } from "@/lib/api/mappers";
+import { setUserStatus } from "@/lib/api/services/admin";
+import type { Role, UserStatus } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
 
 const PAGE_SIZE = 8;
 type RoleFilter = Role | "ALL";
+type Row = MappedUser & { saving?: boolean };
 
-export function UserManager({ currentAdminId }: { currentAdminId: string }) {
+interface UserManagerProps {
+  /** From GET /api/admin/users (server-rendered). */
+  initialUsers: MappedUser[];
+  /** The signed-in admin; the backend rejects banning yourself (400). */
+  currentAdminId: string;
+}
+
+export function UserManager({ initialUsers, currentAdminId }: UserManagerProps) {
+  const router = useRouter();
   const toast = useToast();
-  const [users, run] = useOptimisticPatch(useAdminUsers());
+  const [saving, setSaving] = useState<Set<string>>(new Set());
+  const [confirmed, setConfirmed] = useState<Record<string, UserStatus>>({});
+  const users: Row[] = initialUsers.map((u) => ({ ...u, status: confirmed[u.id] ?? u.status, saving: saving.has(u.id) }));
   const [query, setQuery] = useState("");
   const [role, setRole] = useState<RoleFilter>("ALL");
   const [page, setPage] = useState(1);
-  const [pending, setPending] = useState<{ user: User; action: "ban" | "unban" } | null>(null);
+  const [pending, setPending] = useState<{ user: Row; action: "ban" | "unban" } | null>(null);
 
   const q = query.trim().toLowerCase();
   const filtered = users.filter(
-    (u) => (role === "ALL" || u.role === role) && (!q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)),
+    (u) => (role === "ALL" || u.role === role) && (!q || u.name.toLowerCase().includes(q) || (u.email ?? "").toLowerCase().includes(q)),
   );
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
   const visible = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
-  const changeStatus = (user: User, action: "ban" | "unban") => {
-    const status = action === "ban" ? "BANNED" : "ACTIVE";
-    const simulateFailure = shouldSimulateFailure();
-    run(user.id, { status }, () => updateUserStatus(user.id, status, { simulateFailure }), {
-      onSuccess: () =>
-        toast(
-          action === "ban"
-            ? { title: "User banned", description: `${user.name} can no longer log in to RentNest.` }
-            : { title: "User unbanned", description: `${user.name}'s access has been restored.` },
-        ),
-      onError: (err) =>
-        toast({
-          title: action === "ban" ? "Couldn't ban user" : "Couldn't unban user",
-          description: `${err instanceof MockApiError ? err.message : "Something went wrong."} No changes were made.`,
-          variant: "error",
-        }),
-    });
+  /** PATCH /api/admin/users/:id { status: boolean }. The badge changes only after the backend confirms. */
+  const changeStatus = async (user: Row, action: "ban" | "unban") => {
+    const status: UserStatus = action === "ban" ? "BANNED" : "ACTIVE";
+    setSaving((set) => new Set(set).add(user.id));
+    try {
+      await setUserStatus(browserApi, user.id, status);
+      setConfirmed((c) => ({ ...c, [user.id]: status }));
+      toast(
+        action === "ban"
+          ? { title: "User banned", description: `${user.name} can no longer log in to RentNest.` }
+          : { title: "User unbanned", description: `${user.name}'s access has been restored.` },
+      );
+      router.refresh();
+    } catch (err) {
+      // e.g. 400 "You cannot ban your own account", 404, 403, network. Nothing changes.
+      toast({
+        title: action === "ban" ? "Couldn't ban user" : "Couldn't unban user",
+        description: `${toApiError(err).message} No changes were made.`,
+        variant: "error",
+      });
+    } finally {
+      setSaving((set) => {
+        const next = new Set(set);
+        next.delete(user.id);
+        return next;
+      });
+    }
   };
 
   const roleOptions = (["ALL", "TENANT", "LANDLORD", "ADMIN"] as RoleFilter[]).map((r) => ({
@@ -131,13 +154,11 @@ export function UserManager({ currentAdminId }: { currentAdminId: string }) {
                     <td className="w-full max-w-0 px-4 py-3">
                       <UserCell user={user} isSelf={user.id === currentAdminId} />
                     </td>
-                    <td className="px-4 py-3">
-                      <RoleBadge role={user.role} />
-                    </td>
+                    <td className="px-4 py-3">{user.role && <RoleBadge role={user.role} />}</td>
                     <td className="px-4 py-3">
                       <StatusCell user={user} />
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-stone-600">{formatDate(user.createdAt)}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-stone-600">{user.createdAt ? formatDate(user.createdAt) : "—"}</td>
                     <td className="px-4 py-3 text-right">
                       <UserAction user={user} isSelf={user.id === currentAdminId} onAction={(action) => setPending({ user, action })} />
                     </td>
@@ -153,9 +174,9 @@ export function UserManager({ currentAdminId }: { currentAdminId: string }) {
               <li key={user.id} className="rounded-xl border border-stone-200 bg-white p-4">
                 <UserCell user={user} isSelf={user.id === currentAdminId} />
                 <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-                  <RoleBadge role={user.role} />
+                  {user.role && <RoleBadge role={user.role} />}
                   <StatusCell user={user} />
-                  <span className="text-stone-500">Joined {formatDate(user.createdAt)}</span>
+                  {user.createdAt && <span className="text-stone-500">Joined {formatDate(user.createdAt)}</span>}
                 </div>
                 <div className="mt-4">
                   <UserAction
@@ -186,8 +207,8 @@ export function UserManager({ currentAdminId }: { currentAdminId: string }) {
         confirmIcon={<Ban />}
       >
         <p>
-          {pending?.user.name.split(" ")[0]} won&apos;t be able to log in or use RentNest until you unban the account. Their
-          existing listings and rental requests stay on record.
+          {pending?.user.name.split(" ")[0]} won&apos;t be able to log in or use RentNest until you unban the account, and any
+          existing sessions stop working. Their listings and rental requests stay on record.
         </p>
       </ConfirmDialog>
 
@@ -210,25 +231,25 @@ export function UserManager({ currentAdminId }: { currentAdminId: string }) {
   );
 }
 
-function UserCell({ user, isSelf }: { user: User; isSelf: boolean }) {
+function UserCell({ user, isSelf }: { user: Row; isSelf: boolean }) {
   return (
     <div className="flex min-w-0 items-center gap-3">
-      <Avatar name={user.name} src={user.avatarUrl} />
+      <Avatar name={user.name} />
       <div className="min-w-0">
         <p className="flex items-center gap-2 font-medium text-stone-900">
           <span className="truncate">{user.name}</span>
           {isSelf && <Badge tone="blue">You</Badge>}
         </p>
-        <p className="truncate text-sm text-stone-500">{user.email}</p>
+        {user.email && <p className="truncate text-sm text-stone-500">{user.email}</p>}
       </div>
     </div>
   );
 }
 
-function StatusCell({ user }: { user: WithSaving<User> }) {
+function StatusCell({ user }: { user: Row }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
-      <UserStatusBadge status={user.status} />
+      {user.status && <UserStatusBadge status={user.status} />}
       {user.saving && (
         <span role="status" className="flex items-center gap-1 text-xs text-stone-500">
           <LoaderCircle aria-hidden className="size-3.5 animate-spin" />
@@ -245,13 +266,14 @@ function UserAction({
   onAction,
   fullWidth = false,
 }: {
-  user: WithSaving<User>;
+  user: Row;
   isSelf: boolean;
   onAction: (action: "ban" | "unban") => void;
   fullWidth?: boolean;
 }) {
+  // The backend rejects banning your own account; it doesn't restrict other admins.
   if (isSelf) return <span className="text-sm text-stone-500">This is you</span>;
-  if (user.role === "ADMIN") return <span className="text-sm text-stone-500">Admin account</span>;
+  if (!user.status) return null;
   const className = fullWidth ? "w-full" : undefined;
   return user.status === "BANNED" ? (
     <Button variant="outline" size="sm" onClick={() => onAction("unban")} disabled={user.saving} className={className}>

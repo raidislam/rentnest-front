@@ -1,6 +1,6 @@
 // Auth endpoints (Postman folder "Auth").
 // login() returns the raw token and is meant to be called only from the
-// login Route Handler (Step 03), which stores it in an HttpOnly cookie.
+// login Route Handler (app/api/auth/login), which stores it in an HttpOnly cookie.
 
 import type { AxiosInstance } from "axios";
 import type { LoginBody, LoginResultDTO, RegisterBody, UpdateProfileBody, UserDTO } from "../dto";

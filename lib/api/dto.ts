@@ -305,8 +305,8 @@ export interface UpdateUserStatusBody {
   status: boolean;
 }
 
-/** POST/PUT /api/admin/categories */
+/** POST/PUT /api/admin/categories — Postman fields; source-verified: name 2–50 chars, description optional (max 200). */
 export interface CategoryBody {
   name: string;
-  description: string;
+  description?: string;
 }

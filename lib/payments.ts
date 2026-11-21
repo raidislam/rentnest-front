@@ -9,15 +9,31 @@ export function readGatewayId(value: string | string[] | undefined): string | nu
   return v && GATEWAY_ID.test(v) ? v : null;
 }
 
+export type PaymentGatewayMode = "sandbox" | "live";
+
 /**
- * True only for HTTPS URLs on sslcommerz.com (sandbox or live). The pay button redirects only to
- * the backend-provided paymentUrl, and only if it passes this check — never to an arbitrary URL.
+ * Which SSLCommerz gateway the pay button may redirect to. Set NEXT_PUBLIC_SSLCOMMERZ_MODE=live
+ * only for a production build whose backend uses LIVE SSLCommerz credentials; any other value
+ * (or none) means sandbox, so test builds can never send users to the real payment gateway.
+ * Public, non-secret setting; inlined at build time.
  */
-export function isSslcommerzUrl(url: unknown): url is string {
+export const PAYMENT_GATEWAY_MODE: PaymentGatewayMode = process.env.NEXT_PUBLIC_SSLCOMMERZ_MODE === "live" ? "live" : "sandbox";
+
+/** The only gateway host allowed in each mode (the hosts the backend talks to). */
+export const GATEWAY_HOSTS: Record<PaymentGatewayMode, string> = {
+  sandbox: "sandbox.sslcommerz.com",
+  live: "securepay.sslcommerz.com",
+};
+
+/**
+ * True only for an HTTPS URL on the SSLCommerz host of the configured mode. The pay button
+ * redirects only to the backend-provided paymentUrl, and only if it passes this check.
+ */
+export function isSslcommerzUrl(url: unknown, mode: PaymentGatewayMode = PAYMENT_GATEWAY_MODE): url is string {
   if (typeof url !== "string") return false;
   try {
     const { protocol, hostname } = new URL(url);
-    return protocol === "https:" && (hostname === "sslcommerz.com" || hostname.endsWith(".sslcommerz.com"));
+    return protocol === "https:" && hostname === GATEWAY_HOSTS[mode];
   } catch {
     return false;
   }

@@ -7,8 +7,9 @@ import { CircleAlert, LoaderCircle } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FieldError, FieldHint, FormField, Textarea, fieldAria } from "@/components/ui/field";
-import { submitReview } from "@/lib/mock-api";
-import type { Review } from "@/lib/types";
+import { browserApi } from "@/lib/api/browser";
+import { applyFieldErrors, toApiError } from "@/lib/api/errors";
+import { createReview } from "@/lib/api/services/reviews";
 import { StarRatingInput } from "./star-rating-input";
 
 const COMMENT_MIN = 20;
@@ -25,19 +26,25 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
+export interface SubmittedReview {
+  rating: number;
+  comment: string;
+}
+
 interface ReviewFormProps {
-  rentalRequestId: string;
   propertyId: string;
-  onSubmitted: (review: Review) => void;
+  /** Called only after the backend accepts the review. */
+  onSubmitted: (review: SubmittedReview) => void;
   onCancel: () => void;
 }
 
-export function ReviewForm({ rentalRequestId, propertyId, onSubmitted, onCancel }: ReviewFormProps) {
+export function ReviewForm({ propertyId, onSubmitted, onCancel }: ReviewFormProps) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const {
     register,
     control,
     handleSubmit,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -49,10 +56,12 @@ export function ReviewForm({ rentalRequestId, propertyId, onSubmitted, onCancel 
   const onSubmit = async (values: FormValues) => {
     setSubmitError(null);
     try {
-      const review = await submitReview({ ...values, propertyId, rentalRequestId });
-      onSubmitted(review);
-    } catch {
-      setSubmitError("We couldn't submit your review right now. Please try again.");
+      // Exactly the documented fields. The backend requires a COMPLETED rental (else 403) and one review per property (409).
+      await createReview(browserApi, { propertyId, rating: values.rating, comment: values.comment.trim() });
+      onSubmitted({ rating: values.rating, comment: values.comment.trim() });
+    } catch (err) {
+      const error = toApiError(err);
+      if (!applyFieldErrors(error, setError, {}, ["rating", "comment"])) setSubmitError(error.message);
     }
   };
 

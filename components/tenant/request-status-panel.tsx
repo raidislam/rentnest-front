@@ -4,6 +4,9 @@ import { buttonVariants } from "@/components/ui/button";
 import type { MappedRentalRequest } from "@/lib/api/mappers";
 import type { RequestStatus } from "@/lib/types";
 import { cn, formatPrice } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { CompleteRentalButton } from "./complete-rental-button";
+import { LeaveReviewButton } from "./leave-review-button";
 import { tenantPaymentPath } from "./request-actions";
 
 const styles: Record<RequestStatus, { icon: LucideIcon; box: string; iconColor: string }> = {
@@ -47,11 +50,24 @@ export function RequestStatusPanel({ request }: { request: MappedRentalRequest }
     },
     ACTIVE: {
       title: "Active rental",
-      body: "Your payment is complete and this is your current home.",
+      body: "Your payment is complete and this is your current home. When the rental ends, mark it as completed to leave a review.",
+      action: <CompleteRentalButton rentalRequestId={request.id} propertyTitle={request.property?.title} className="w-full sm:w-auto" />,
     },
     COMPLETED: {
       title: "Rental completed",
       body: "This rental has ended. It stays here as part of your rental history.",
+      action:
+        request.reviewed === true ? (
+          <Badge tone="brand">You reviewed this home</Badge>
+        ) : (
+          <LeaveReviewButton
+            propertyId={request.propertyId}
+            propertyTitle={request.property?.title ?? request.propertyTitle ?? "This property"}
+            variant="primary"
+            size="md"
+            className="w-full sm:w-auto"
+          />
+        ),
     },
   };
 

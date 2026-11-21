@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Building2, ClipboardList, LayoutDashboard, Search, Users } from "lucide-react";
+import { Building2, ClipboardList, LayoutDashboard, Search, Users, Tags } from "lucide-react";
 import { DashboardShell, type DashboardNavItem } from "@/components/dashboard/dashboard-shell";
 import { requireUser } from "@/lib/auth/session";
 
@@ -10,6 +10,7 @@ const nav: DashboardNavItem[] = [
   { href: "/dashboard/admin/users", label: "Users", icon: <Users /> },
   { href: "/dashboard/admin/properties", label: "Properties", icon: <Building2 /> },
   { href: "/dashboard/admin/requests", label: "Rental requests", icon: <ClipboardList /> },
+  { href: "/dashboard/admin/categories", label: "Categories", icon: <Tags /> },
   { href: "/properties", label: "Browse properties", icon: <Search /> },
 ];
 

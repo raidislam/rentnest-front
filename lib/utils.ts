@@ -55,18 +55,6 @@ export function dashboardPath(role: "TENANT" | "LANDLORD" | "ADMIN") {
   return `/dashboard/${role.toLowerCase()}`;
 }
 
-/**
- * next/image only optimizes hosts allowed in next.config.ts. Landlords can paste
- * any image URL, so render other hosts unoptimized instead of failing.
- */
-export function isOptimizableImage(src: string) {
-  try {
-    return new URL(src).hostname === "images.unsplash.com";
-  } catch {
-    return false;
-  }
-}
-
 /** Drops falsy entries, e.g. optional rows built with `condition && { ... }`. */
 export function compact<T>(items: (T | false | null | undefined | "" | 0)[]): T[] {
   return items.filter(Boolean) as T[];

@@ -1,27 +1,6 @@
-import { Ban, BadgeCheck, CircleCheck, CircleX, Hourglass } from "lucide-react";
+import { Ban, BadgeCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import type { PropertyStatus, Role, UserStatus } from "@/lib/types";
-
-const propertyStatus: Record<PropertyStatus, { label: string; tone: "amber" | "brand" | "red"; icon: typeof Hourglass }> = {
-  PENDING: { label: "Pending review", tone: "amber", icon: Hourglass },
-  APPROVED: { label: "Approved", tone: "brand", icon: CircleCheck },
-  REJECTED: { label: "Rejected", tone: "red", icon: CircleX },
-};
-
-/**
- * Listing moderation status (icon + text, so it doesn't rely on colour).
- * Renders nothing when there is no status: the backend has no moderation yet.
- */
-export function PropertyStatusBadge({ status }: { status?: PropertyStatus }) {
-  if (!status) return null;
-  const { label, tone, icon: Icon } = propertyStatus[status];
-  return (
-    <Badge tone={tone}>
-      <Icon />
-      {label}
-    </Badge>
-  );
-}
+import type { Role, UserStatus } from "@/lib/types";
 
 export const roleLabel: Record<Role, string> = { TENANT: "Tenant", LANDLORD: "Landlord", ADMIN: "Admin" };
 
